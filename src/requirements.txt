@@ -1,0 +1,13 @@
+click==8.3.0
+fastapi==0.136.0
+httpx==0.28.1
+jupyter==1.1.1
+mlflow==3.11.1
+pandas==2.3.3
+prefect==3.6.25
+psycopg2-binary==2.9.11
+pyarrow==23.0.1
+pytest==9.0.3
+python-dotenv==1.2.2
+scikit-learn==1.8.0
+uvicorn[standard]==0.44.0
