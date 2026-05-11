@@ -3,7 +3,7 @@ This is the capstone project of Viktor and Markus
 
 This repository includes a Docker-based local stack for `Postgres`, `MLflow`, and `Prefect`. The command to start the services is: `docker compose docker/compose.yaml up -d` from the project root to start the local services used throughout the lessons.
 
-Run `docker compose -f docker/compose.yaml up -d` from the project root to start the local services
+Run `docker compose -f docker/compose.yml up -d` from the project root to start the local services
 When the stack is running, the local endpoints are:
 
 - `FastAPI/Uvicorn`: `http://127.0.0.1:8000`
