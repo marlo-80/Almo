@@ -114,13 +114,13 @@ services:
   prometheus:
     image: prom/prometheus:v3.7.3
     command:
-      - "--config.file=/etc/prometheus/prometheus.yaml"
+      - "--config.file=/etc/prometheus/prometheus.yml"
     depends_on:
       - api
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - mle_network
 
