@@ -10,7 +10,6 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vikmar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vikmar}
-      POSTGRES_MULTIPLE_DATABASES: mlflow,prefect,fastapi_db
     ports:
       - "5432:5432"
     volumes:
