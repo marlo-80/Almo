@@ -1,0 +1,3 @@
+CREATE DATABASE mlflow;
+CREATE DATABASE prefect;
+CREATE DATABASE fastapi_db;
