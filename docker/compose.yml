@@ -37,7 +37,7 @@ services:
     environment:
       DB_CONN: postgresql://${POSTGRES_USER:-vikmar}:${POSTGRES_PASSWORD:-vikmar}@postgres:5432/fastapi_db
     volumes:
-      - .:/app
+      - ../:/app
     depends_on:
       postgres:
         condition: service_healthy
