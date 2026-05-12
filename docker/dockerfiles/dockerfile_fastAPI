@@ -1,22 +1,12 @@
-FROM python:3.11-slim
+FROM python:3.11
 
-# Arbeitsverzeichnis im Container setzen
 WORKDIR /app
 
-# 1. Nur die Abhängigkeiten kopieren (für Build-Cache)
 COPY requirements.txt .
-
-# 2. Abhängigkeiten installieren (wird nur neu ausgeführt, wenn sich requirements.txt ändert)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. Jetzt den restlichen Quellcode kopieren
 COPY . .
-
-# 4. Sicherstellen, dass das Ausgabeverzeichnis existiert
 RUN mkdir -p data/predictions
 
-# 5. Port für Uvicorn freigeben
 EXPOSE 8000
-
-# 6. Standard-Startbefehl (kann von compose.yml überschrieben werden)
 CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,8 @@
+name: 'flights_dbt'
+version: '1.0'
+profile: 'flights_dbt'
+
+models:
+  flights_dbt:
+    staging:
+      +materialized: view         

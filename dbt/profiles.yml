@@ -1,0 +1,13 @@
+flights_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres             
+      user: vikmar
+      password: vikmar
+      port: 5432
+      dbname: fastapi_db
+      schema: dbt_staging         # alle dbt‑Modelle landen in diesem Schema
+      threads: 2
+      keepalives_idle: 0

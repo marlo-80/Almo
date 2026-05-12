@@ -1,0 +1,11 @@
+flight_data/
+data/
+raw/
+*.csv
+*.parquet
+.gitignore
+
+# Python-Cache und Müll
+__pycache__/
+*.pyc
+.git/
