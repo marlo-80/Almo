@@ -54,7 +54,8 @@ services:
           --port 5000 \
           --backend-store-uri postgresql://${POSTGRES_USER:-vikmar}:${POSTGRES_PASSWORD:-vikmar}@postgres:5432/mlflow \
           --serve-artifacts \
-          --artifacts-destination /app/storage/mlartifacts
+          --artifacts-destination /app/storage/mlartifacts \
+          --allowed-hosts '*'
     ports:
       - "5001:5000"
     volumes:
