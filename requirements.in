@@ -8,7 +8,7 @@ mlflow==3.11.1
 pandas==2.3.3
 prefect==3.6.25
 prometheus-client==0.22.1
-prometheus-fastapi-instrumentator
+prometheus-fastapi-instrumentator==7.1.0
 psycopg2-binary==2.9.11
 pyarrow==23.0.1
 python-dotenv==1.2.2
