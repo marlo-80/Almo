@@ -1,1 +1,0 @@
-{"_invocation_id": "1d65918f-339a-41bf-b2d4-73848ea8bb03", "linked": {"0": {"name": "model.flights_dbt.flights_subset", "type": "model"}, "1": {"name": "model.flights_dbt.stg_flights", "type": "model", "succ": [0]}}}
