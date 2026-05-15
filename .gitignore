@@ -1,7 +1,6 @@
-flight_data
-src/__pycache__
-dbt/target
 dbt/logs
-dbt/
+dbt/target
+flight_data
 logs
-storage/mlartifacts
+src/__pycache__
+storage/
