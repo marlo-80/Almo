@@ -1,9 +1,14 @@
+from fastapi import FastAPI, Response
 import os
 import joblib
 import pandas as pd
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List
+
+from contextlib import asynccontextmanager
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest, REGISTRY
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from prepare_data import MODEL_NAME, MODELS_DIR
@@ -43,10 +48,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Flight Delay Prediction API",
-    description="API for predicting flight delays using a HistGradientBoosting model.",
+    description="API for Predicting Flight Delays",
     version="1.0",
     lifespan=lifespan
 )
+Instrumentator().instrument(app).expose(app)
 
 # Define the expected incoming JSON structure using Pydantic
 class Flight(BaseModel):
@@ -81,20 +87,27 @@ class BatchFlights(BaseModel):
 class BatchPredictionOutput(BaseModel):
     predictions: List[float]    
 
+# Optional: Eigene Metriken definieren
+PREDICTION_REQUESTS = Counter(
+    "prediction_requests_total",
+    "Total number of prediction requests",
+    ["model_version"]
+)
+PREDICTION_DURATION = Histogram(
+    "prediction_duration_seconds",
+    "Time spent processing prediction"
+)
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: Flight):
     """Accepts single flight details and returns the model's regression prediction."""
     if app.state.model_pipeline is None:
-        raise HTTPException(status_code=500, detail="Model pipeline is not loaded.")
+        raise HTTPException(status_code=503, detail="Model pipeline is not loaded.")
     
     try:
-        # Convert incoming Pydantic payload directly to a Python dictionary
         input_data = payload.model_dump()
-        df = pd.DataFrame([input_data])
-        
-        prediction = app.state.model_pipeline.predict(df)[0]
-        
+        df = pd.DataFrame([input_data])        
+        prediction = app.state.model_pipeline.predict(df)[0]        
         return PredictionOutput(prediction=float(prediction))
         
     except Exception as e:
@@ -115,10 +128,8 @@ def predict_batch(payload: BatchFlights):
         
         # Build a single Pandas DataFrame from the list of dictionaries
         # This preserves column names and order for the ColumnTransformer
-        df = pd.DataFrame(data_dicts)
-        
-        # Batch inference via Scikit-Learn
-        predictions = model_pipeline.predict(df)
+        df = pd.DataFrame(data_dicts)        
+        predictions = app.state.model_pipeline.predict(df)
         
         # Convert numpy array to native python floats for JSON serialization
         return BatchPredictionOutput(predictions=predictions.tolist())
@@ -127,5 +138,13 @@ def predict_batch(payload: BatchFlights):
         raise HTTPException(status_code=400, detail=f"Batch prediction error: {str(e)}")    
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy", "model_loaded": app.state.model_pipeline is not None}
+def health_check():    
+    if app.state.model_pipeline is None:
+        raise HTTPException(status_code=503, detail="Model pipeline is not loaded.")
+    return {"status": "healthy", "model_loaded": True}
+    
+@app.get("/metrics")
+async def metrics():
+    """Expose Prometheus metrics."""
+    return Response(content=generate_latest(REGISTRY), 
+                    media_type=CONTENT_TYPE_LATEST)
