@@ -27,7 +27,7 @@ When the stack is running, the local endpoints are:
 At the first start some bootstrapping is needed to dowload the data and setup Postgres SQL. After all services from the initialization have been established execute:<br><br>
 `docker compose -f docker/compose.yml --profile init up -d bootstrap`
 
-Data will be downloaded to \repofolder\flight_data.<br>
+Data will be downloaded to \repofolder\flight_data and Postgres will be initialised with those data.<br>
 Check the progress with:
 <br><br>
 `docker compose -f docker/compose.yml logs -f bootstrap`
