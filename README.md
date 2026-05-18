@@ -30,7 +30,7 @@ At the first start some bootstrapping is needed to dowload the data and setup Po
 Data will be downloaded to \repofolder\flight_data.<br>
 Check the progress with:
 <br><br>
-`docker logs docker-bootstrap-1 -f`
+`docker compose -f docker/compose.yml logs -f bootstrap`
 <br><br>
 Wait until the log shows "Import abgeschlossen. XXXX Zeilen in raw.flights eingefügt."<br>
 You can verify the table with:
