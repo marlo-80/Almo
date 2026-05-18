@@ -29,6 +29,11 @@ At the first start some bootstrapping is needed to dowload the data and setup Po
 
 Data will be downloaded to \repofolder\flight_data and Postgres will be initialised with those data. The process can take a long time, what until you see the output: <br><br>
  `"Import abgeschlossen. XXXX Zeilen in raw.flights eingefügt."`<br>
+
+During the initialisation process you can watch the table grow in Postgres with: <br><br>
+`watch -n 5 "docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c 'SELECT COUNT(*) FROM raw.flights;' 2>/dev/null"` 
+
+ 
 You can verify the table with:
 <br>
 <br>
