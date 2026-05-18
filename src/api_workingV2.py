@@ -20,15 +20,13 @@ mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:500
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
-    model_uri = f"models:/{MODEL_NAME}@{MODEL_ALIAS}"
-    try:
-        app.state.model_pipeline = mlflow.pyfunc.load_model(model_uri)
-        print(f"Modell geladen: {model_uri}")
-    except Exception as e:
-        print(f"WARNUNG: Modell nicht geladen – {e}")
-        app.state.model_pipeline = None   # API bleibt trotzdem erreichbar
-    yield
+    app.state.model_pipeline = mlflow.pyfunc.load_model(model_uri)
+    print("Model pipeline successfully attached to app state.")
+    
+    yield  # Usual python generator logic. The application runs and processes requests here    
+
+    # SHUTDOWN: Executed when the application closes down
+    print("Cleaning up resources...")
     del app.state.model_pipeline
 
 
@@ -112,9 +110,10 @@ def predict_batch(payload: BatchFlights):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Batch prediction error: {str(e)}")    
 
-    
 @app.get("/health")
-def health_check():
+def health_check():    
     if app.state.model_pipeline is None:
-        return {"status": "no model loaded", "model_loaded": False}
+        raise HTTPException(status_code=503, detail="Model pipeline is not loaded.")
     return {"status": "healthy", "model_loaded": True}
+    
+

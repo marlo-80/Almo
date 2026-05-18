@@ -110,7 +110,7 @@ services:
   postgres:
     image: postgres:17
     container_name: postgres
-    restart: always
+    restart: "no"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vikmar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vikmar}
