@@ -9,7 +9,7 @@ This is the capstone project of Viktor and Markus. The projects goal is to predi
 
 
 ## Initialization
-To make sure that there are no conflicts when creating our docker containers, delete all volumes defined in the compose.yml first. You can use this command:
+To make sure that there are no conflicts when creating our docker containers, delete all volumes defined in the compose.yml first. You can use this command: <br><br>
 `docker compose down -v`
 
 All services needed run in a Docker-based local stack. To start the local services execute this from the repository root: <br><br>
