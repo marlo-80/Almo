@@ -12,6 +12,7 @@ services:
     environment:
       DB_CONN: postgresql://${POSTGRES_USER:-vikmar}:${POSTGRES_PASSWORD:-vikmar}@postgres:5432/fastapi_db
       PREFECT_API_URL: http://prefect:4200/api
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ../:/app
     depends_on:

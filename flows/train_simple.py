@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.metrics import mean_absolute_error, r2_score, precision_score, recall_score, f1_score
 import mlflow
 import mlflow.sklearn
 from prefect import flow, task
@@ -81,8 +81,35 @@ def train_and_log(train_df: pd.DataFrame, val_df: pd.DataFrame):
         mae = mean_absolute_error(y_val, preds)
         r2  = r2_score(y_val, preds)
 
-        mlflow.log_metrics({"mae_val": mae, "r2_val": r2})
+
+
+        # Schwellwert definieren
+        DELAY_THRESHOLD = 15   # Minuten
+
+        y_true_bin = (y_val > DELAY_THRESHOLD).astype(int)
+        y_pred_bin = (preds > DELAY_THRESHOLD).astype(int)
+
+        precision = precision_score(y_true_bin, y_pred_bin)
+        recall    = recall_score(y_true_bin, y_pred_bin)
+        f1        = f1_score(y_true_bin, y_pred_bin)
+
+        mlflow.log_metrics({
+            "precision_15": precision,
+            "recall_15": recall,
+            "f1_15": f1,
+        })
+
+
+
+        mlflow.log_metrics({"mae_val": mae, "r2_val": r2, "precision_15": precision,"recall_15": recall, "f1_15": f1})
         mlflow.sklearn.log_model(model, "simple_rf_model")
+
+        # Registrieren & Alias vergeben
+        run_id = mlflow.active_run().info.run_id
+        model_uri = f"runs:/{run_id}/simple_rf_model"
+        registered = mlflow.register_model(model_uri, "flight-delay-baseline")
+        client = mlflow.tracking.MlflowClient()
+        client.set_registered_model_alias("flight-delay-baseline", "champion", registered.version)
 
         print(f"MAE: {mae:.2f}, R²: {r2:.4f}")
         return model
