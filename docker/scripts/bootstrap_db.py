@@ -42,6 +42,8 @@ def bootstrap():
     from src.data import load_from_local
     from src.data import load_from_kaggle
     df = load_from_local()
+    
+    print(f"Schreibe {len(df)} Zeilen nach PostgreSQL …")
     df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=5000)
 
     with engine.connect() as conn:
