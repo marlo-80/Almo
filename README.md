@@ -105,12 +105,3 @@ Assuming your configuration dictionary is called `MY_MODEL` you cant execute the
 ```bash
 docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py YOUR_MODEL
 ```
-
-
-
-
-
-
-
-
-
