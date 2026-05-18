@@ -33,8 +33,7 @@ Wait until the log shows "Import abgeschlossen. XXXX Zeilen in raw.flights einge
 You can verify the table with:
 <br>
 <br>
-`docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db \
-  -c "SELECT COUNT(*) FROM raw.flights;"`
+`docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*) FROM raw.flights;"`
 
 ## Creation of dbt models
 Set a random seed to make data sampling reproducable. Unfortunately, dbt models don't have a seed parameter by themself.
