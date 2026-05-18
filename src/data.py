@@ -3,16 +3,25 @@ import re
 import kagglehub
 import pandas as pd
 
+from sqlalchemy import create_engine
+
 
 kagglehub_path = "robikscube/flight-delay-dataset-20182022"
 
 DEFAULT_PATH = "flight_data"
+
+DB_URI = "postgresql://vikmar:vikmar@postgres:5432/fastapi_db"
+
+
 
 def load_from_kaggle( kaggle_path: str, output_dir: str)->str:
     #print(f"Downloading dataset from Kaggle: {kaggle_path} to {output_dir}")
     path = kagglehub.dataset_download(kaggle_path, output_dir = output_dir)
     print("Path to dataset files:", path)
     return path
+
+
+
 
 def load_from_local(path = f"./{DEFAULT_PATH}/")->pd.DataFrame:
     if path is None or path == "":
@@ -41,6 +50,31 @@ def load_from_local(path = f"./{DEFAULT_PATH}/")->pd.DataFrame:
     #df.info()
     return df
 
+
+
+
+
+def load_subset_table(query: str) -> pd.DataFrame:
+    """Lädt eine beliebige Tabelle/View aus PostgreSQL."""
+    engine = create_engine(DB_URI)
+    df = pd.read_sql(query, engine)
+    return df
+
+
+
+
+def convert_integers_to_float(df: pd.DataFrame, numeric_cols: list[str]) -> pd.DataFrame:
+    """Konvertiert alle als int64 gespeicherten numerischen Spalten nach float64."""
+    df = df.copy()
+    for col in numeric_cols:
+        if col in df.columns and df[col].dtype == 'int64':
+            df[col] = df[col].astype('float64')
+    return df
+
+
+
+
+# Wird vermutlich nicht mehr gebraucht. Checken und entfernen:
 def shackle_dataset(big_df: pd.DataFrame, fractions : list[float], max_rows: int)-> pd.DataFrame:
     for fraction in fractions:
         # simply split randomly the dataset and keep only the fraction of it, 
