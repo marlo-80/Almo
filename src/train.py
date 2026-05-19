@@ -107,4 +107,13 @@ def train_and_log(
                     registered.version,
                 )
 
-    return pipeline
+    return pipeline, rmse
+
+
+
+def create_model(model_type: str, model_params: dict):
+    if model_type == "RandomForestRegressor":
+        from sklearn.ensemble import RandomForestRegressor
+        return RandomForestRegressor(**model_params)
+    # später z. B. "KerasRegressor" oder "PyTorchRegressor" ergänzen
+    raise ValueError(f"Unknown model_type: {model_type}")
