@@ -1,3 +1,5 @@
+import pandas as pd
+
 from prepare_data import load_from_local, shuffle_dataset, MODELS_DIR, MODEL_NAME, RANDOM_STATE
 import pickle
 
@@ -19,33 +21,29 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 def LoadData():
     df = load_from_local()
     print(f"Dataset loaded with shape: {df.shape}")
-    df = shuffle_dataset(df,[0.5,0.5,0.5], max_rows=250_000)
+    df = shuffle_dataset(df,[0.5,0.5,0.5], max_rows=2_500_000)
     print("Dataset shuffled")
+    
     return df
 
-def TrainModel():
-    df = LoadData()
+def CreateModel(df: pd.DataFrame, *, categorical_columns: list[str] = [], numeric_columns: list[str] = [], target_column: str ):
     print(f"Dataset loaded with shape: {df.shape}")    
 
-    target_column = "ArrDelay"
-    df.dropna(subset=target_column, inplace=True)
-    X = df.drop(columns=[target_column])
-    y = df[target_column]
-
-    xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE)
-
-    print("Split done")    
-    print(f"DF Describe:\n{xTrain.describe()}")
-    print(f"DF Info:\n{xTrain.info()}")
-    
-    target_columns = [  "Origin", "Dest", "OriginAirportID", "DestAirportID", #"OriginCityName", "DestCityName",
-                        "Airline", "Operating_Airline",
-                        "Flight_Number_Marketing_Airline", "Tail_Number", 
-                     ]
-    numeric_columns = ["Year", "Month", "DayofMonth", 'DayOfWeek','CRSDeptHrs', 'CRSDepMins', 'CRSArrHrs', 'CRSArrMins', "Distance"] 
+    X: pd.DataFrame
+    y: pd.Series
+    try:
+        df.dropna()
+        X = df.drop(columns=[target_column, "flight_number_operating_airline"]).copy()
+        y = df[target_column].copy()
+        print( "dropped; Splitting...")
+    except Exception as e:
+        print( f"dropping exception is: {str(e)}")
+        print("Error occurred while dropping columns")
+        print( df.info())
+        print( df.describe()) 
 
     preprocessor = ColumnTransformer(transformers=[
-        ('high_card_cat', TargetEncoder(target_type='continuous'), target_columns),
+        ('high_card_cat', TargetEncoder(target_type='continuous'), cat_columns),
         #('low_card_cat', OneHotEncoder(handle_unknown='ignore'), ["Airline"], ["Operating_Airline"],
         #              ["Flight_Number_Marketing_Airline"], ["Tail_Number"]),
         ('num', StandardScaler(), numeric_columns)
@@ -60,22 +58,31 @@ def TrainModel():
             random_state=RANDOM_STATE
         ))
     ])
-    
-    now = datetime.now()
-    time_string = now.strftime("%Y-%m-%d %H:%M:%S")
-    print(f"Fitting start: {time_string}")
+
+    return model, X, y
+
+def TrainModel( model: Pipeline, X: pd.DataFrame, y: pd.Series):
+    xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE)
+    #print("splitted")    
+    #print(f"DF Describe:\n{xTrain.describe()}")
+    #print(f"DF Info:\n{xTrain.info()}")     
+    #now = datetime.now()
+    #time_string = now.strftime("%Y-%m-%d %H:%M:%S")
+    #print(f"Fitting start: {time_string}")
 
     model.fit(xTrain, yTrain)
-    now = datetime.now()
-    time_string = now.strftime("%Y-%m-%d %H:%M:%S")
+    #now = datetime.now()
+    #time_string = now.strftime("%Y-%m-%d %H:%M:%S")
 
     predictions = model.predict(xTest)
-    print("predictions done")
+    #print("predictions done")
     mae = mean_absolute_error(yTest, predictions)
     r2 = r2_score(yTest, predictions)
-    print(f"Mean Absolute Error: {mae}")
-    print(f"R2 Score: {r2}")
+    #print(f"Mean Absolute Error: {mae}")
+    #print(f"R2 Score: {r2}")    
+    return model, mae, r2
 
+def SaveModel(model: Pipeline, path: str = f"./{MODELS_DIR}/{MODEL_NAME}"):
     print(f"Saving model to {MODEL_NAME} using pickle...")
     Path(f"./{MODELS_DIR}").mkdir(parents=True, exist_ok=True)
 
@@ -85,6 +92,17 @@ def TrainModel():
     print(f"Model saved successfully with pickle to {MODELS_DIR}/{MODEL_NAME}")
 
 if __name__ == "__main__":
-    TrainModel()
-    
+    df = LoadData()
+    cat_columns = [ "origin", "dest", "origin_airport_id", "dest_airport_id", 
+                    "airline", "operating_airline", "flight_number_marketing_airline", 
+                    "tail_number", 
+                  ]
+    numeric_columns = ["year", "month", "day_of_month", "day_of_week",
+        'crs_dep_hrs', 'crs_dep_mins', 'crs_arr_hrs', 'crs_arr_mins', "distance"] 
+    target_column = "arr_delay"
+
+    model, X, y = CreateModel(df,categorical_columns=cat_columns, numeric_columns=numeric_columns, target_column=target_column)    
+    model, mae, r2 = TrainModel(model, X, y)
+    print(f"Model trained with MAE: {mae} and R2: {r2}")
+    SaveModel(model=model)
 
