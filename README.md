@@ -6,6 +6,7 @@ This is the capstone project of Viktor and Markus. The projects goal is to predi
 - Project cloned, `docker/.env` contains at least:
   - `POSTGRES_USER`
   - `POSTGRES_PASSWORD`
+  - `Terminal with prompt at repo root`
 
 
 ## Initialization
@@ -14,7 +15,7 @@ To make sure that there are no conflicts when creating our docker containers, de
 docker compose -f docker/compose.yml down -v
 ```
 
-All services needed run in a Docker-based local stack. To start the local services execute this from the repository root: <br>
+All services needed to run in a Docker-based local stack. To start the local services execute this command: <br>
 ```bash
 docker compose -f docker/compose.yml up -d
 ```
@@ -40,9 +41,16 @@ Data will be downloaded to \repofolder\flight_data and Postgres will be initiali
 <br>
 
 To check if the initialisation is still running you can watch the size of the Postgres database.: <br>
+Linux/"Mac"
 ```bash
 watch -n 5 "docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c \"SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;\""
 ```
+Windows
+Linux/"Mac"
+```bash
+while -n 5 "docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c \"SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;\""
+```
+
 
 As long as the values are growing while no other process writes to Postgres the process is still running.
  
@@ -80,28 +88,34 @@ All training logic is driven by a configuration dictionary. You do not need to m
 
 ### 2. Define your trainin configuration
 
-Open `config.py` and add your a dictionary that will define your model. Here are the available keys:
+Open `config.py` from `repo/flows/` and add your a dictionary that will define your model. Here are the available keys:
 
 | Key | Type | Description | Example / Possible values |
-| --- | --- | --- | --- |
-| `run_name` | `str` | Name of the MLflow run | `"my_experiment"` |
-| `dataset_query` | `str` | SQL query that returns the training data | `"SELECT * FROM dbt_staging.flights_subset"` |
-| `target` | `str` | Column to predict | `"arr_delay"` |
-| `numeric_cols` | `list[str]` | Numeric feature columns | `["crs_dep_time", "dep_delay_minutes", ...]` |
-| `categorical_cols` | `list[str]` | Categorical feature columns (can be empty) | `["airline", "origin"]` |
+|-----|------|-------------|---------------------------|
+| `run_name` | `str` | Name of the MLflow run | `"simple_rf_no_preprocessing"` |
+| `dataset_query` | `str` | SQL query to load training data | `"SELECT * FROM dbt_staging.flights_subset"` |
+| `target` | `str` | Target column to predict | `"arr_delay"` |
+| `numeric_cols` | `list[str]` | Numeric feature columns | `["crs_dep_time", "dep_delay_minutes", …]` |
+| `categorical_cols` | `list[str]` | Categorical feature columns | `["airline", "origin"]` |
 | `impute_num` | `str` | Imputation strategy for numeric columns | `"median"`, `"mean"`, `"most_frequent"` |
 | `impute_cat` | `str` | Imputation strategy for categorical columns | `"most_frequent"` |
 | `model_type` | `str` | Model class to use | `"RandomForestRegressor"` |
-| `model_params` | `dict` | Hyperparameters passed to the model | `{"n_estimators": 100, "max_depth": 15}` |
+| `model_params` | `dict` | Hyperparameters passed to the model | `{"n_estimators": 50, "max_depth": 10}` |
 | `register` | `bool` | Whether to register the model in MLflow | `true` / `false` |
-| `model_name` | `str` | Name for the registered model | `"flight-delay-baseline"` |
-| `alias` | `str` | Alias to assign after registration (e.g. "champion") | `"champion"`, `"staging"` |
+| `model_name` | `str` | Registered model name in MLflow | `"flight-delay-baseline"` |
+| `alias` | `str` | Alias to assign after registration | `"champion"`, `"staging"` |
 | `delay_threshold` | `int` | Threshold (minutes) for binary classification metrics | `15` |
+| `dataset_name` | `str` | Human‑readable dataset identifier shown in MLflow UI | `"flights_subset_2019-2020"` |
+| `dataset_source` | `str` | Source table or view in PostgreSQL | `"dbt_staging.flights_subset"` |
+| `dataset_start_date` | `str` | Start date of the underlying dbt sample | `"2019-01-01"` |
+| `dataset_end_date` | `str` | End date of the underlying dbt sample | `"2020-01-01"` |
+| `dataset_sample_size` | `int` | Number of rows in the dbt sample | `100000` |
+| `dataset_random_seed` | `float` | Random seed used for dbt sampling | `0.42` |
 
 All keys except `run_name`, `dataset_query`, `target`, `numeric_cols`, `categorical_cols`, `model_type`, and `model_params` are optional and fall back to sensible defaults.
 
 ## 3. Run the training flow
-Assuming your configuration dictionary is called `MY_MODEL` you cant execute the whole training and logging pipeline with this command:
+Assuming your configuration dictionary is called `NEW_MODEL` you cant execute the whole training and logging pipeline with this command:
 ```bash
-docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py YOUR_MODEL
+docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py NEW_MODEL
 ```
