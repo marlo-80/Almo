@@ -1,7 +1,4 @@
 import pandas as pd
-import requests
-import sys
-import io
 import os
 import re
 import kagglehub
@@ -10,23 +7,15 @@ import pickle
 from datetime import datetime
 from pathlib import Path
 
-#import sklearn
 from sklearn.compose import ColumnTransformer
 from sklearn.metrics import confusion_matrix, mean_absolute_error, r2_score, accuracy_score
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder, TargetEncoder
+from sklearn.preprocessing import OneHotEncoder, TargetEncoder,StandardScaler, PolynomialFeatures
 from sklearn.ensemble import HistGradientBoostingRegressor
-
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.linear_model import LinearRegression
 from sklearn.feature_extraction.text import TfidfVectorizer
-
-
-
-
-
 
 
 kagglehub_path = "robikscube/flight-delay-dataset-20182022"
@@ -38,7 +27,7 @@ MODEL_NAME = "FlightDelayPredictor.pkl"
 
 def load_from_kaggle( kaggle_path: str, output_dir: str)->str:
     #print(f"Downloading dataset from Kaggle: {kaggle_path} to {output_dir}")
-    path = kagglehub.dataset_download(kaggle_path, output_dir = output_dir, unzip = True)
+    path = kagglehub.dataset_download(kaggle_path, output_dir = output_dir)
     print("Path to dataset files:", path)
     return path
 
@@ -58,12 +47,13 @@ def load_from_local(path = f"./{DEFAULT_PATH}/")->pd.DataFrame:
         df_ = pd.read_csv(os.path.join(path, file), 
                     usecols=[
                             "Year", "Month", "DayofMonth", "DayOfWeek",
-                            "Airline", "Origin", "Dest", 
-                            "CRSDepTime", "CRSArrTime", "Distance", "CRSElapsedTime", #"DepDelay", #"Diverted", "Cancelled",
-                            "Operating_Airline", #"OriginCityName", "DestCityName",
-                            "Tail_Number", "Flight_Number_Operating_Airline", "Flight_Number_Marketing_Airline",
-                            "OriginAirportID", "DestAirportID", "ArrDelay"])        
-        df_['CRSDeptHrs'] = df_['CRSDepTime'] // 100
+                            "Airline", "Operating_Airline", "Flight_Number_Operating_Airline", "Flight_Number_Marketing_Airline",
+                            "Origin", "Dest", "OriginAirportID", "DestAirportID",
+                            "CRSDepTime", "CRSArrTime", "Distance", "CRSElapsedTime", #"DepDelay", #"Diverted", "Cancelled",                             
+                            "ArrDelay", "Tail_Number"
+                             ])        
+        
+        df_['CRSDepHrs']  = df_['CRSDepTime'] // 100
         df_['CRSArrHrs' ] = df_['CRSArrTime'] // 100
         df_['CRSArrMins'] = df_['CRSArrTime'] % 100
         df_['CRSDepMins'] = df_['CRSDepTime'] % 100
@@ -79,6 +69,12 @@ def shuffle_dataset(big_df: pd.DataFrame, fractions : list[float], max_rows: int
         big_df, _  = train_test_split(big_df, test_size=fraction, random_state=RANDOM_STATE)
         if not max_rows is None and len(big_df) < max_rows and max_rows > 0:
             break
+    big_df.rename(columns={ "OriginAirportID":"origin_airport_id", "DestAirportID":"dest_airport_id", 
+                        "DayOfWeek":"day_of_week", "DayofMonth":"day_of_month", "CRSDepHrs":"crs_dep_hrs", "CRSDepMins":"crs_dep_mins", "CRSArrHrs":"crs_arr_hrs", 
+                        "CRSElapsedTime":"crs_elapsed_time", "Flight_Number_Marketing_Airline":"flight_number_marketing_airline",   
+                        "CRSArrMins":"crs_arr_mins", "ArrDelay" : "arr_delay"  }, inplace=True)
+    big_df.rename (columns=lambda x : x.lower(), inplace=True)
+    big_df.dropna(inplace=True)
     return big_df.reset_index(drop=True)
 
 if __name__ == "__main__":
@@ -92,7 +88,7 @@ if __name__ == "__main__":
     
     
     print("starting splitting")
-    target_column = "ArrDelay"
+    target_column = "arr_delay"
     df.dropna(subset=target_column, inplace=True)
     X = df.drop(columns=[target_column])
     y = df[target_column]
@@ -105,16 +101,16 @@ if __name__ == "__main__":
     print("splitting/replacing done")    
     print("---")
 
-    target_columns = [  "Origin", "Dest", "OriginAirportID", "DestAirportID", #"OriginCityName", "DestCityName",
-                        "Airline", "Operating_Airline",
-                        "Flight_Number_Marketing_Airline", "Tail_Number", 
+    categorical_columns = [  "origin", "dest", "origin_airport_id", "dest_airport_id", #"OriginCityName", "DestCityName",
+                        "airline", "operating_airline",
+                        "flight_number_marketing_airline",  
                      ]
                         
-    numeric_columns = ["Year", "Month", "DayofMonth", 'DayOfWeek','CRSDeptHrs', 'CRSDepMins', 'CRSArrHrs', 'CRSArrMins', "Distance"] #, "CRSElapsedTime",]
+    numeric_columns = ["year", "month", "day_of_month", 'day_of_week','crs_dep_hrs', 'crs_dep_mins', 'crs_arr_hrs', 'crs_arr_mins', "distance"] #, "CRSElapsedTime",]
     print( "Building a pipeline")
     
     preprocessor = ColumnTransformer(transformers=[
-        ('high_card_cat', TargetEncoder(target_type='continuous'), target_columns),
+        ('high_card_cat', TargetEncoder(target_type='continuous'), categorical_columns),
         #('low_card_cat', OneHotEncoder(handle_unknown='ignore'), ["Airline"], ["Operating_Airline"],
         #              ["Flight_Number_Marketing_Airline"], ["Tail_Number"]),
         ('num', StandardScaler(), numeric_columns)
