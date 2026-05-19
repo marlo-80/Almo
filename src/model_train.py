@@ -26,16 +26,14 @@ def LoadData():
     
     return df
 
-def CreateModel(df: pd.DataFrame, *, categorical_columns: list[str] = [], numeric_columns: list[str] = [], target_column: str ):
-    print(f"Dataset loaded with shape: {df.shape}")    
-
+def CreateModel(df: pd.DataFrame, *, categorical_columns: list[str], numeric_columns: list[str], target_column: str, drop_columns: list[str]):
     X: pd.DataFrame
     y: pd.Series
     try:
         df.dropna()
-        X = df.drop(columns=[target_column, "flight_number_operating_airline"]).copy()
+        X = df.drop(columns=[target_column] + drop_columns).copy()
         y = df[target_column].copy()
-        print( "dropped; Splitting...")
+        
     except Exception as e:
         print( f"dropping exception is: {str(e)}")
         print("Error occurred while dropping columns")
@@ -43,7 +41,7 @@ def CreateModel(df: pd.DataFrame, *, categorical_columns: list[str] = [], numeri
         print( df.describe()) 
 
     preprocessor = ColumnTransformer(transformers=[
-        ('high_card_cat', TargetEncoder(target_type='continuous'), cat_columns),
+        ('high_card_cat', TargetEncoder(target_type='continuous'), categorical_columns),
         #('low_card_cat', OneHotEncoder(handle_unknown='ignore'), ["Airline"], ["Operating_Airline"],
         #              ["Flight_Number_Marketing_Airline"], ["Tail_Number"]),
         ('num', StandardScaler(), numeric_columns)
@@ -61,16 +59,17 @@ def CreateModel(df: pd.DataFrame, *, categorical_columns: list[str] = [], numeri
 
     return model, X, y
 
-def TrainModel( model: Pipeline, *, X: pd.DataFrame, y: pd.Series, random_state: int = RANDOM_STATE, test_size: float = 0.2):
-    xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=test_size, random_state=random_state)
-    model.fit(xTrain, yTrain)
-    predictions = model.predict(xTest)
-    #print("predictions done")
+def TrainModelSplitted( model: Pipeline, *, Xtrain: pd.DataFrame, yTrain: pd.Series, Xtest: pd.DataFrame, yTest: pd.Series):
+    model.fit(Xtrain, yTrain)
+    predictions = model.predict(Xtest)
     mae = mean_absolute_error(yTest, predictions)
     r2 = r2_score(yTest, predictions)
-    #print(f"Mean Absolute Error: {mae}")
-    #print(f"R2 Score: {r2}")    
     return model, mae, r2
+
+def TrainModel( model: Pipeline, *, X: pd.DataFrame, y: pd.Series, random_state: int = RANDOM_STATE, test_size: float = 0.2):
+    xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    return TrainModelSplitted(model, Xtrain=xTrain, yTrain=yTrain, Xtest=xTest, yTest=yTest)
+
 
 def SaveModel(model: Pipeline, path: str = f"./{MODELS_DIR}/{MODEL_NAME}"):
     print(f"Saving model to {MODEL_NAME} using pickle...")
@@ -90,8 +89,9 @@ if __name__ == "__main__":
     numeric_columns = ["year", "month", "day_of_month", "day_of_week",
         'crs_dep_hrs', 'crs_dep_mins', 'crs_arr_hrs', 'crs_arr_mins', "distance"] 
     target_column = "arr_delay"
+    drop_columns = ["flight_number_operating_airline"]
 
-    model, X, y = CreateModel(df,categorical_columns=cat_columns, numeric_columns=numeric_columns, target_column=target_column)    
+    model, X, y = CreateModel(df,categorical_columns=cat_columns, numeric_columns=numeric_columns, target_column=target_column, drop_columns=drop_columns)    
     model, mae, r2 = TrainModel(model, X=X, y=y)
     print(f"Model trained with MAE: {mae} and R2: {r2}")
     SaveModel(model=model)
