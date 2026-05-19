@@ -61,19 +61,9 @@ def CreateModel(df: pd.DataFrame, *, categorical_columns: list[str] = [], numeri
 
     return model, X, y
 
-def TrainModel( model: Pipeline, X: pd.DataFrame, y: pd.Series):
-    xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE)
-    #print("splitted")    
-    #print(f"DF Describe:\n{xTrain.describe()}")
-    #print(f"DF Info:\n{xTrain.info()}")     
-    #now = datetime.now()
-    #time_string = now.strftime("%Y-%m-%d %H:%M:%S")
-    #print(f"Fitting start: {time_string}")
-
+def TrainModel( model: Pipeline, *, X: pd.DataFrame, y: pd.Series, random_state: int = RANDOM_STATE, test_size: float = 0.2):
+    xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=test_size, random_state=random_state)
     model.fit(xTrain, yTrain)
-    #now = datetime.now()
-    #time_string = now.strftime("%Y-%m-%d %H:%M:%S")
-
     predictions = model.predict(xTest)
     #print("predictions done")
     mae = mean_absolute_error(yTest, predictions)
@@ -89,7 +79,7 @@ def SaveModel(model: Pipeline, path: str = f"./{MODELS_DIR}/{MODEL_NAME}"):
     with open(f"./{MODELS_DIR}/{MODEL_NAME}", 'wb') as file:    
         pickle.dump(model, file)
 
-    print(f"Model saved successfully with pickle to {MODELS_DIR}/{MODEL_NAME}")
+    #print(f"Model saved successfully with pickle to {MODELS_DIR}/{MODEL_NAME}")
 
 if __name__ == "__main__":
     df = LoadData()
@@ -102,7 +92,7 @@ if __name__ == "__main__":
     target_column = "arr_delay"
 
     model, X, y = CreateModel(df,categorical_columns=cat_columns, numeric_columns=numeric_columns, target_column=target_column)    
-    model, mae, r2 = TrainModel(model, X, y)
+    model, mae, r2 = TrainModel(model, X=X, y=y)
     print(f"Model trained with MAE: {mae} and R2: {r2}")
     SaveModel(model=model)
 
