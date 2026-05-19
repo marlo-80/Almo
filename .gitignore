@@ -1,7 +1,8 @@
 dbt/logs
 dbt/target
 flight_data
+flows/__pycache__/
 logs
-src/__pycache__
+src/__pycache__/
 storage/
 Ze_Trash/

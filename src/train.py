@@ -69,7 +69,13 @@ def train_and_log(
         )
         mlflow.log_input(dataset, context="training")
 
-        mlflow.log_params(config)
+        flat_params = {}
+        for key, value in config.items():
+            if isinstance(value, (list, dict)):
+                flat_params[key] = str(value)
+            else:
+                flat_params[key] = value
+        mlflow.log_params(flat_params)
         mlflow.log_metrics({
             "mae": mae,
             "mse": mse,

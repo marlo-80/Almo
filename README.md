@@ -6,7 +6,7 @@ This is the capstone project of Viktor and Markus. The projects goal is to predi
 - Project cloned, `docker/.env` contains at least:
   - `POSTGRES_USER`
   - `POSTGRES_PASSWORD`
-  - `Terminal with prompt at repo root`
+- `Terminal with prompt at repo root`
 
 
 ## Initialization
@@ -86,7 +86,7 @@ All training logic is driven by a configuration dictionary. You do not need to m
 - The database contains the `dbt_staging.flights_subset` table (or another table of your choice)
 - MLflow is reachable at `http://localhost:5001`
 
-### 2. Define your trainin configuration
+### 2. Define your training configuration
 
 Open `config.py` from `repo/flows/` and add your a dictionary that will define your model. Here are the available keys:
 
@@ -114,7 +114,7 @@ Open `config.py` from `repo/flows/` and add your a dictionary that will define y
 
 All keys except `run_name`, `dataset_query`, `target`, `numeric_cols`, `categorical_cols`, `model_type`, and `model_params` are optional and fall back to sensible defaults.
 
-## 3. Run the training flow
+### 3. Run the training flow
 Assuming your configuration dictionary is called `NEW_MODEL` you cant execute the whole training and logging pipeline with this command:
 ```bash
 docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py NEW_MODEL

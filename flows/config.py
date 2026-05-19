@@ -19,14 +19,13 @@ DEFAULT_CONFIG = {
     "model_name": "flight-delay-baseline",
     "alias": "champion",
     "delay_threshold": 15,
-    # Parameter for manual logging of used data sets 
+    # Parameter for manual logging of used data
     "dataset_name": "flights_subset_2019-2020",
     "dataset_start_date": "2019-01-01",
     "dataset_end_date": "2020-01-01",
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
     # Parameter for logging of used data by MLFlow
-    "dataset_name": "flights_subset_2019-2020",
     "dataset_source": "dbt_staging.flights_subset",
 }
 
@@ -58,6 +57,5 @@ SMALL_TREE = {
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
     # Parameter for logging of used data by MLFlow
-    "dataset_name": "flights_subset_2019-2020",
     "dataset_source": "dbt_staging.flights_subset",
 }
