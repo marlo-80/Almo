@@ -44,15 +44,23 @@ def bootstrap():
     generator = load_from_local()
 
     len_all = 0
-    for df in generator:    
-        print(f"Schreibe {len_all} Zeilen nach PostgreSQL …")
-        df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=5000)
+    first = True
+    for df in generator:
         len_all += len(df)
+        print(f"Writing  Data Frame to PostgreSQL.")
+        if first:
+            df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=5000)
+            print(f"{len_all} Rows have been written to PostgreSQL.")
+            first = False
+        else:
+            df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=5000)
+            print(f"{len_all} Rows have been written to PostgreSQL.")
 
     with engine.connect() as conn:
         conn.execute(text('CREATE INDEX IF NOT EXISTS idx_flight_date ON raw.flights ("FlightDate");'))
         conn.commit()
-    print(f"Import abgeschlossen. {len(df)} Zeilen in raw.flights eingefügt.")
+        
+    print(f"Import finished. {len_all} rows have been added to raw.flights.")
 
 if __name__ == "__main__":
     bootstrap()

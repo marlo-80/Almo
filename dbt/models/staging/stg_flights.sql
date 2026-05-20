@@ -16,6 +16,7 @@ WITH cleaned AS (
 )
 SELECT
     -- Date
+    "FlightDate"::date                  AS flight_date,
     "Year"                              AS year,
     "Quarter"                           AS quarter,
     "Month"                             AS month,
@@ -25,12 +26,14 @@ SELECT
     "Origin"                            AS origin,
     "OriginCityName"                    AS origin_city_name,
     "OriginState"                       AS origin_state,
+    "OriginAirportID"                   AS origin_airport_id,
     "Dest"                              AS dest,
     "DestCityName"                      AS dest_city_name,
     "DestState"                         AS dest_state,
+    "DestAirportID"                     AS dest_airport_id,
     "Distance"                          AS distance,
     "DistanceGroup"                     AS distance_group,
-    -- Airline & Fligh
+    -- Airline & Flight
     "Marketing_Airline_Network"         AS marketing_airline_network,
     "Operating_Airline"                 AS operating_airline,
     "Flight_Number_Marketing_Airline"   AS flight_number_marketing_airline,

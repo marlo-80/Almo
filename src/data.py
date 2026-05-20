@@ -42,7 +42,7 @@ def load_from_local(path = f"./{DEFAULT_PATH}/"):
                         # Date
                         "Year", "Quarter", "Month", "DayofMonth", "DayOfWeek", "FlightDate",
                         # Route & Distance
-                        "Origin", "OriginCityName", "OriginState", "Dest", "DestCityName", "DestState", "Distance", "DistanceGroup",
+                        "Origin", "OriginCityName", "OriginState", "OriginAirportID", "Dest", "DestCityName", "DestState","DestAirportID", "Distance", "DistanceGroup",
                         # Airline & Flight
                         "Marketing_Airline_Network", "Operating_Airline", "Flight_Number_Marketing_Airline", "Flight_Number_Operating_Airline", "Tail_Number",
                         # Planed Departure and Arrivals

@@ -1,6 +1,9 @@
 {{
   config(
-    materialized = 'table'
+    materialized = 'table',
+    indexes = [
+      {'columns': ['flight_date'], 'type': 'btree'}
+    ]
   )
 }}
 
