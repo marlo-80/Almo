@@ -46,7 +46,7 @@ def bootstrap():
     len_all = 0
     for df in generator:    
         print(f"Schreibe {len(df)} Zeilen nach PostgreSQL …")
-        df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=5000)
+        df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=5000)
         len_all += len(df)
 
     with engine.connect() as conn:
