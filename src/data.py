@@ -37,11 +37,22 @@ def load_from_local(path = f"./{DEFAULT_PATH}/")->pd.DataFrame:
             continue
         print( f"read from file: {file}")
         df_ = pd.read_csv(os.path.join(path, file), 
-                    usecols=["FlightDate", "Airline", "Origin", "Dest", 
-                              "CRSDepTime", "CRSArrTime", "DepDelay", "Diverted", "Cancelled",
-                              "Operating_Airline", "OriginCityName", "DestCityName",
-                              "Tail_Number", "Flight_Number_Operating_Airline", 
-                              "OriginAirportID", "DestAirportID", "DepDelayMinutes", "ArrDelay"])        
+                    usecols=[
+                        # Date
+                        "Year", "Quarter", "Month", "DayofMonth", "DayOfWeek", "FlightDate",
+                        # Route & Distance
+                        "Origin", "OriginCityName", "OriginState", "Dest", "DestCityName", "DestState", "Distance", "DistanceGroup",
+                        # Airline & Flight
+                        "Marketing_Airline_Network", "Operating_Airline", "Flight_Number_Marketing_Airline", "Flight_Number_Operating_Airline", "Tail_Number",
+                        # Planed Departure and Arrivals
+                        "CRSDepTime", "CRSArrTime", "CRSElapsedTime",
+                        # Daytime Bins
+                        "DepTimeBlk",
+                        # Targets
+                        "ArrDelay", "ArrDelayMinutes", "ArrDel15", "ArrivalDelayGroups", "DepDelay", "DepDelayMinutes",
+                        # Filtering (needed for WHERE clause)
+                        "Cancelled", "Diverted"
+                    ])        
         
         df = pd.concat([df, df_], ignore_index=True)        
         
