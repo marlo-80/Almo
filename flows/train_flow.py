@@ -55,4 +55,10 @@ def training_pipeline(config: dict = DEFAULT_CONFIG):
     return pipeline
 
 if __name__ == "__main__":
-    training_pipeline()
+    import sys
+    from flows.config import DEFAULT_CONFIG
+
+    config_name = sys.argv[1] if len(sys.argv) > 1 else "DEFAULT_CONFIG"
+    import flows.config as cfg_module
+    config = getattr(cfg_module, config_name, DEFAULT_CONFIG)
+    training_pipeline(config)

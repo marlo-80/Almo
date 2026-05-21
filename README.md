@@ -75,7 +75,7 @@ docker compose -f docker/compose.yml exec api dbt run --project-dir /app/dbt --p
 
 Verification of the dbt model:<br>
 ```bash 
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging.flights_subset;"`
+docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging.flights_subset;"
 ```
 <br><br>
 

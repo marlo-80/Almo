@@ -4,6 +4,23 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 
+import re
+from sklearn.base import BaseEstimator, TransformerMixin
+
+class ColumnNameNormalizer(BaseEstimator, TransformerMixin):
+    """Wandelt alle Spaltennamen in snake_case um."""
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        X.columns = [
+            re.sub(r'(?<!^)(?=[A-Z])', '_', col).lower().replace(' ', '_')
+            for col in X.columns
+        ]
+        return X
+
+
 def build_preprocessor(
     numeric_cols: list[str],
     categorical_cols: list[str],
@@ -27,3 +44,15 @@ def build_preprocessor(
     ])
 
     return preprocessor
+if __name__ == "__main__":    # Teste den Preprocessor mit einem Dummy-Datensatz
+    import pandas as pd
+
+    ct = ColumnNameNormalizer()
+    df = pd.DataFrame({
+        "FFlightDateID": ["2021-01-01", "2021-01-02"],
+        "Origin": ["JFK", "LAX"],
+        "Dest": ["LAX", "JFK"],
+        "ArrDelay": [5, -3]
+    })
+    out = ct.transform(df)
+    print(out.columns.tolist())

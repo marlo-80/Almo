@@ -88,7 +88,7 @@ def train_and_log(
         })
         mlflow.sklearn.log_model(
             pipeline,
-            name="full_pipeline",
+            name=config.get("run_name", "full_pipeline"),
             )
 
         # Optional registrieren, falls in config gewünscht

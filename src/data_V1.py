@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import kagglehub
 import pandas as pd
 
@@ -24,26 +23,25 @@ def load_from_kaggle( kaggle_path: str, output_dir: str)->str:
 
 
 
-def load_from_local(path = f"./{DEFAULT_PATH}/"):
+def load_from_local(path = f"./{DEFAULT_PATH}/")->pd.DataFrame:
     if path is None or path == "":
         path = f"./{DEFAULT_PATH}/"
 
     if not os.path.exists(path) or os.listdir(path) == []:
         path = load_from_kaggle(kagglehub_path, output_dir=path)
 
-    print(f"Loading data from local path: {path}")
+    df = pd.DataFrame()
     for file in os.listdir(path):
-        try:
-            print(f"checking file: {file}")
-            if re.match(r"Combined_Flights_\d{4}\.csv", file) is None:
-                continue
-            print( f"read from file: {file}")
-            df = pd.read_csv(os.path.join(path, file), 
+        print(f"checking file: {file}")
+        if re.match(r"Combined_Flights_\d{4}\.csv", file) is None:
+            continue
+        print( f"read from file: {file}")
+        df_ = pd.read_csv(os.path.join(path, file), 
                     usecols=[
                         # Date
                         "Year", "Quarter", "Month", "DayofMonth", "DayOfWeek", "FlightDate",
                         # Route & Distance
-                        "Origin", "OriginCityName", "OriginState", "OriginAirportID", "Dest", "DestCityName", "DestState","DestAirportID", "Distance", "DistanceGroup",
+                        "Origin", "OriginCityName", "OriginState", "Dest", "DestCityName", "DestState", "Distance", "DistanceGroup",
                         # Airline & Flight
                         "Marketing_Airline_Network", "Operating_Airline", "Flight_Number_Marketing_Airline", "Flight_Number_Operating_Airline", "Tail_Number",
                         # Planed Departure and Arrivals
@@ -54,13 +52,14 @@ def load_from_local(path = f"./{DEFAULT_PATH}/"):
                         "ArrDelay", "ArrDelayMinutes", "ArrDel15", "ArrivalDelayGroups", "DepDelay", "DepDelayMinutes",
                         # Filtering (needed for WHERE clause)
                         "Cancelled", "Diverted"
-                    ])       
-            
-            yield df        
-            #df = pd.concat([df, df_], ignore_index=True)        
-        except Exception as e:
-            print(f"Error reading file {file}: {str(e)}", file=sys.stderr)
-            continue
+                    ])        
+        
+        df = pd.concat([df, df_], ignore_index=True)        
+        
+    #print(df.head())
+    #print(df.describe())
+    #df.info()
+    return df
 
 
 
