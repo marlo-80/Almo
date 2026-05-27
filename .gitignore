@@ -7,6 +7,10 @@ src/__pycache__/
 storage/
 Ze_Trash/
 
+Presentations/
+capstone2-presentationVIKTOR.pdf
+discussion.md
+
 .python-version
 .venv/
 requirements_local.txt
