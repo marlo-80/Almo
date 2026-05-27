@@ -3,7 +3,9 @@
 #                                            Simple Training                                         #
 ######################################################################################################
 
-DEFAULT_CONFIG = {
+
+DEFAULT_REGRESSION_CONFIG = {
+    "active ": True,
     "run_name": "small_rf",
     "dataset_query": "SELECT * FROM dbt_staging.flights_subset",
     "target": "arr_delay_minutes",
@@ -17,7 +19,7 @@ DEFAULT_CONFIG = {
     "impute_num": "median",
     "impute_cat": "most_frequent",
     "model_type": "RandomForestRegressor",
-    "model_params": {"n_estimators": 50, "max_depth": 10, "random_state": 42},
+    "model_params": {"n_estimators": 50, "max_depth": 10, "random_state": 42}, 
     "register": False,
     "model_name": "flight-delay-baseline",
     "alias": "",
@@ -29,6 +31,36 @@ DEFAULT_CONFIG = {
     "dataset_random_seed": 0.42,
     "dataset_source": "dbt_staging.flights_subset",
 }
+
+DEFAULT_CLASSIFICATION_CONFIG = {
+    "active ": False,
+    "run_name": "small_rf_classification",
+    "dataset_query": "SELECT * FROM dbt_staging.flights_subset",
+    "target": "arr_del_groups",
+    "numeric_cols": [
+        "year", "quarter", "month", "day_of_month", "day_of_week",
+        "crs_dep_time", "crs_arr_time", "crs_elapsed_time",
+        "distance", #"distance_group",
+    ],
+    "categorical_cols": [
+        "airline", "operating_airline", "marketing_airline_network",
+        "origin", "origin_city_name",
+        "dest", "dest_city_name", 
+        "distance_group", "tail_number", "flight_number_marketing_airline", "flight_number_operating_airline",
+    ],
+    "impute_num": "median",
+    "impute_cat": "most_frequent",
+    "model_type": "RandomForestClassifier",
+    "classifier_model_params": {"n_estimators": 50, "max_features": "sqrt", "max_depth": 10, "random_state": 42},
+    "dataset_name": "flights_subset_2019-2020",
+    "dataset_start_date": "2019-01-01",
+    "dataset_end_date": "2020-01-01",
+    "dataset_sample_size": 100000,
+    "dataset_random_seed": 0.42,
+    "dataset_source": "dbt_staging.flights_subset",
+}
+
+
 
 
 ######################################################################################################

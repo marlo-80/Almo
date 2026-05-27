@@ -1,5 +1,8 @@
+import sys
+
 import pandas as pd
 import os
+import asyncio
 
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -10,26 +13,95 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 
 import mlflow
+import flows.config as flows_config
 
 
 MODEL_NAME = "flight-delay-baseline"      # identisch mit dem Namen aus mlflow.register_model()
 MODEL_ALIAS = "champion"                  # identisch mit dem Alias aus set_registered_model_alias()
 model_uri = f"models:/{MODEL_NAME}@{MODEL_ALIAS}"
 
-mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
+##mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
+
+async def fetch_model_with_retry(model_uri: str, active: bool, max_retries: int = 3):
+    """Attempts to download the model with a hard execution timeout per try."""
+    if not active:
+        print(f"Model {model_uri} is inactive, skipping download.")
+        return None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Enforce a strict 5-minute cap on the mlflow download function
+            async with asyncio.timeout(300):
+                loop = asyncio.get_running_loop()
+                model = await loop.run_in_executor(None, mlflow.pyfunc.load_model, model_uri)
+                return model
+        except TimeoutError:
+            print(f"Attempt {attempt}/{max_retries} timed out downloading {model_uri}")
+        except Exception as e:
+            print(f"Attempt {attempt}/{max_retries} failed with error: {e}")
+        
+        # Wait before retrying (exponential backoff)
+        await asyncio.sleep(2 ** attempt)
+        
+    raise RuntimeError(f"Failed to load model {model_uri}from MLflow after {max_retries} attempts.")
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):    
     mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
     model_uri = f"models:/{MODEL_NAME}@{MODEL_ALIAS}"
+    # try:
+    #     app.state.model_pipeline = mlflow.pyfunc.load_model(model_uri)
+    #     print(f"Modell geladen: {model_uri}")
+    # except Exception as e:
+    #     print(f"WARNUNG: Modell nicht geladen – {e}")
+    #     app.state.model_pipeline = None   # API bleibt trotzdem erreichbar
+    # yield
+    # del app.state.model_pipeline     
     try:
-        app.state.model_pipeline = mlflow.pyfunc.load_model(model_uri)
-        print(f"Modell geladen: {model_uri}")
+        #app.state.model = await fetch_model_with_retry(model_uri)
+        regressor_uri = f"{model_uri}/regressor"
+        classifier_uri = f"{model_uri}/classifier"
+
+        # Run both fetch operations concurrently
+        results = await asyncio.gather(
+            fetch_model_with_retry(regressor_uri,active =flows_config.DEFAULT_REGRESSION_CONFIG.get("active", True)),
+            fetch_model_with_retry(classifier_uri,active =flows_config.DEFAULT_CLASSIFICATION_CONFIG.get("active", False)),
+            return_exceptions=True 
+        )
+
+        regressor_model, classifier_model = results
+        loaded_some = False
+
+        # Process Regressor
+        if isinstance(regressor_model, Exception):
+        # Handle the error for the regressor specifically
+            print(f"❌ Regressor failed: {regressor_model}", file=sys.stderr)
+        elif regressor_model is not None:
+            app.state.regressor_pipeline = regressor_model
+            loaded_some = True
+            print(f"Regressor loaded")
+
+        # Process Classifier
+        if isinstance(classifier_model, Exception):
+            # Handle the error for the classifier specifically
+            print(f"❌ Classifier failed: {classifier_model}", file=sys.stderr)
+        elif classifier_model is not None:
+            app.state.classifier_pipeline = classifier_model
+            loaded_some = True
+            print(f"✅ Classifier-Modell geladen")
+
+        if not loaded_some:
+            print(f"no model loaded ",file =sys.stderr)
+            raise   RuntimeError("Kein Modell geladen")          
+        
     except Exception as e:
-        print(f"WARNUNG: Modell nicht geladen – {e}")
-        app.state.model_pipeline = None   # API bleibt trotzdem erreichbar
+        print(f"CRITICAL: Application failed to bootstrap model. {e}")        
+        raise e 
+
     yield
-    del app.state.model_pipeline
+    # RUNS ON SHUTDOWN
+    if hasattr(app.state, "model"):
+        del app.state.model
 
 
 app = FastAPI(
