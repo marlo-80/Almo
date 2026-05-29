@@ -165,7 +165,13 @@ def train_and_log(
         plt.close("all")
 
         # Signatur nur mit echten Feature-Spalten
-        feature_cols = config["numeric_cols"] + config["categorical_cols"]
+        feature_cols = (
+            config.get("low_cardinality_cols", []) +
+            config.get("high_cardinality_cols", []) +
+            config.get("cyclic_cols", []) +
+            config.get("numeric_cols", []) +
+            config.get("skewed_numeric_cols", [])
+        )
         X_train[config["numeric_cols"]] = X_train[config["numeric_cols"]].astype(float)
         X_train_signature = X_train[feature_cols]
 

@@ -19,23 +19,27 @@ API_MODELS = {
 
 # Minimale Fallback‑Konfiguration – wird nur geladen, falls kein anderer Name übergeben wird.
 DEFAULT_CONFIG = {
-    "run_name": "optuna-fallback",
-    "n_trials": 5,
-    "tuning_direction": "minimize",
+    "run_name": "fallback",
     "task": "regression",
-    "target": "arr_delay_minutes",
-    "numeric_cols": [],
-    "categorical_cols": [],
-    "model_type": "RandomForestRegressor",
-    "param_ranges": {},
-    "register": False,
-    "alias": "",
+    "target_type": "continuous",
+    "impute_num": "median",
+    "impute_cat": "most_frequent",
+    "low_card_strategy": "onehot",
+    "high_card_strategy": "target",
 
-    # Optuna‑Defaults (nur relevant, wenn der Flow ohne explizite Config gestartet wird)
-    "n_trials": 5,
-    "tuning_direction": "minimize",
-    "param_ranges": {},
-    "fixed_model_params": {},
+    "target": "arr_delay_minutes",
+    "low_cardinality_cols": [],
+    "high_cardinality_cols": [],
+    "cyclic_cols": [],
+    "numeric_cols": [],
+    "skewed_numeric_cols": [],
+
+    "model_type": "RandomForestRegressor",
+    "model_params": {},
+
+    "register": False,
+    "model_name": "fallback",
+    "alias": "",
 }
 
 
@@ -43,30 +47,45 @@ DEFAULT_CONFIG = {
 #                                            Simple Regression                                       #
 ######################################################################################################
 
+# flows/config.py (nur die vier angepassten Configs)
+
 REG = {
     "run_name": "rf_reg",
-
-    # Set task to regression
     "task": "regression",
+    "target_type": "continuous",          # für TargetEncoder & Metriken
 
-    # Preprocessing (unverändert)
+    # Preprocessing
     "impute_num": "median",
-    "impute_cat": "most_frequent", 
+    "impute_cat": "most_frequent",
+    "low_card_strategy": "onehot",
+    "high_card_strategy": "target",
 
-    # Model Definitions (Regressor statt Classifier)
+    # Feature-Spalten
+    "target": "arr_delay_minutes",
+    "low_cardinality_cols": [
+        "year", "quarter", "month", "day_of_month", "day_of_week",
+        "distance_group", "dep_time_blk",
+    ],
+    "high_cardinality_cols": [
+        "origin_airport_id", "dest_airport_id",
+        "flight_number_marketing_airline", "flight_number_operating_airline",
+        "tail_number",
+    ],
+    "cyclic_cols": [
+        "crs_dep_time", "crs_arr_time",
+    ],
+    "numeric_cols": [
+        "crs_elapsed_time",
+    ],
+    "skewed_numeric_cols": [
+        "distance",
+    ],
+
+    # Modell
     "model_type": "RandomForestRegressor",
     "model_params": {"n_estimators": 20, "max_depth": 5, "random_state": 42},
 
-    # Feature Definitions (unverändert)
-    "target": "arr_delay_minutes",          # ← stetiges Target
-    "numeric_cols": [
-        "year", "quarter", "month", "day_of_month", "day_of_week",
-        "crs_dep_time", "crs_arr_time", "crs_elapsed_time",
-        "distance", "distance_group",
-    ],
-    "categorical_cols": [],    
-    
-    # Dataset parameter, logging only (unverändert)
+    # Daten (nur Logging)
     "dataset_query": "SELECT * FROM dbt_staging.flights_subset_pre_covid",
     "dataset_name": "flights_subset_pre-covid",
     "dataset_start_date": "2018-01-01",
@@ -75,14 +94,13 @@ REG = {
     "dataset_random_seed": 0.42,
     "dataset_source": "dbt_staging.flights_subset_pre_covid",
 
-    # Registration and Evaluation
+    # Registrierung & Promotion
     "register": False,
     "model_name": "regressor",
     "alias": "champion",
-    "promotion_metric": "rmse",           # ← klassisches Regressionsmaß
-    "promotion_mode": "minimize",         # ← kleiner ist besser
+    "promotion_metric": "rmse",
+    "promotion_mode": "minimize",
 }
-
 
 ######################################################################################################
 #                                            Simple Classification                                   #
@@ -90,28 +108,41 @@ REG = {
 
 CLASS = {
     "run_name": "rf_class",
-
-    # Set task to classification for classification or regression for regression
     "task": "classification",
+    "target_type": "binary",
 
     # Preprocessing
     "impute_num": "median",
-    "impute_cat": "most_frequent", 
+    "impute_cat": "most_frequent",
+    "low_card_strategy": "onehot",
+    "high_card_strategy": "target",
 
-    # Model Definitions
-    "model_type": "RandomForestClassifier",
-    "model_params": {"n_estimators": 200, "max_depth": 10, "class_weight": "balanced", "random_state": 42},        
-
-    # Feature Definitions
-    "target": "arr_del15",            # ← binäres Target
-    "numeric_cols": [
+    # Feature-Spalten
+    "target": "arr_del15",
+    "low_cardinality_cols": [
         "year", "quarter", "month", "day_of_month", "day_of_week",
-        "crs_dep_time", "crs_arr_time", "crs_elapsed_time",
-        "distance", "distance_group",
+        "distance_group", "dep_time_blk",
     ],
-    "categorical_cols": [],    
-    
-    # Datset parameter, logging only
+    "high_cardinality_cols": [
+        "origin_airport_id", "dest_airport_id",
+        "flight_number_marketing_airline", "flight_number_operating_airline",
+        "tail_number",
+    ],
+    "cyclic_cols": [
+        "crs_dep_time", "crs_arr_time",
+    ],
+    "numeric_cols": [
+        "crs_elapsed_time",
+    ],
+    "skewed_numeric_cols": [
+        "distance",
+    ],
+
+    # Modell
+    "model_type": "RandomForestClassifier",
+    "model_params": {"n_estimators": 200, "max_depth": 10, "class_weight": "balanced", "random_state": 42},
+
+    # Daten (nur Logging)
     "dataset_query": "SELECT * FROM dbt_staging.flights_subset_pre_covid",
     "dataset_name": "flights_subset_pre-covid",
     "dataset_start_date": "2018-01-01",
@@ -120,54 +151,64 @@ CLASS = {
     "dataset_random_seed": 0.42,
     "dataset_source": "dbt_staging.flights_subset_pre_covid",
 
-    # Registration and Evaluation
+    # Registrierung & Promotion
     "register": False,
     "model_name": "classifier",
     "alias": "champion",
-    "promotion_metric": "f1",         # ← für Klassifikation
-    "promotion_mode": "maximize",     # ← F1 soll möglichst groß sein
+    "promotion_metric": "f1",
+    "promotion_mode": "maximize",
 }
-
-
 
 ######################################################################################################
 #                                         Optuna Regression                                          #
 ######################################################################################################
 
 REG_OPTUNA = {
-    # Experiment & Tuning Control
     "run_name": "optuna_rf_reg",
-
-    # Set task to regression
     "task": "regression",
+    "target_type": "continuous",
 
-    # Optuna Parameters
+    # Optuna
     "n_trials": 2,
     "tuning_metric": "rmse",
-    "tuning_direction": "minimize",          # RMSE soll minimiert werden
+    "tuning_direction": "minimize",
 
-    # Preprocessing Definition (unverändert)
+    # Preprocessing
     "impute_num": "median",
     "impute_cat": "most_frequent",
+    "low_card_strategy": "onehot",
+    "high_card_strategy": "target",
 
-    # Model Definition (Regressor statt Classifier)
+    # Feature-Spalten
+    "target": "arr_delay_minutes",
+    "low_cardinality_cols": [
+        "year", "quarter", "month", "day_of_month", "day_of_week",
+        "distance_group", "dep_time_blk",
+    ],
+    "high_cardinality_cols": [
+        "origin_airport_id", "dest_airport_id",
+        "flight_number_marketing_airline", "flight_number_operating_airline",
+        "tail_number",
+    ],
+    "cyclic_cols": [
+        "crs_dep_time", "crs_arr_time",
+    ],
+    "numeric_cols": [
+        "crs_elapsed_time",
+    ],
+    "skewed_numeric_cols": [
+        "distance",
+    ],
+
+    # Modell
     "model_type": "RandomForestRegressor",
     "param_ranges": {
         "n_estimators": {"type": "int", "low": 50, "high": 300},
         "max_depth":     {"type": "int", "low": 5, "high": 20},
     },
-    "fixed_model_params": {"random_state": 42},   # class_weight entfällt
+    "fixed_model_params": {"random_state": 42},
 
-    # Feature Definitions (stetiges Target)
-    "target": "arr_delay_minutes",
-    "numeric_cols": [
-        "year", "quarter", "month", "day_of_month", "day_of_week",
-        "crs_dep_time", "crs_arr_time", "crs_elapsed_time",
-        "distance", "distance_group",
-    ],
-    "categorical_cols": [],
-
-    # Data Definitions (Logging only, unverändert)
+    # Daten (nur Logging)
     "dataset_query": "SELECT * FROM dbt_staging.flights_subset_pre_covid",
     "dataset_name": "flights_subset_pre-covid",
     "dataset_start_date": "2018-01-01",
@@ -176,7 +217,7 @@ REG_OPTUNA = {
     "dataset_random_seed": 0.42,
     "dataset_source": "dbt_staging.flights_subset_pre_covid",
 
-    # Registration and Evaluation (Regressionsmetrik)
+    # Registrierung & Promotion
     "register": False,
     "model_name": "regressor",
     "alias": "champion",
@@ -189,22 +230,43 @@ REG_OPTUNA = {
 ######################################################################################################
 
 CLASS_OPTUNA = {
-    # Experiment & Tuning Control
     "run_name": "optuna_rf_class",
-
-    # Set task to classification for classification or regression for regression
     "task": "classification",
+    "target_type": "binary",
 
-    # Optuna Parameters
-    "n_trials": 2,
+    # Optuna
+    "n_trials": 20,
     "tuning_metric": "f1",
-    "tuning_direction": "maximize",              # F1 soll maximiert werden
+    "tuning_direction": "maximize",
 
-    # Preprocessing Definition
+    # Preprocessing
     "impute_num": "median",
     "impute_cat": "most_frequent",
+    "low_card_strategy": "onehot",
+    "high_card_strategy": "target",
 
-    # Model Definition
+    # Feature-Spalten
+    "target": "arr_del15",
+    "low_cardinality_cols": [
+        "year", "quarter", "month", "day_of_month", "day_of_week",
+        "distance_group", "dep_time_blk",
+    ],
+    "high_cardinality_cols": [
+        "origin_airport_id", "dest_airport_id",
+        "flight_number_marketing_airline", "flight_number_operating_airline",
+        "tail_number",
+    ],
+    "cyclic_cols": [
+        "crs_dep_time", "crs_arr_time",
+    ],
+    "numeric_cols": [
+        "crs_elapsed_time",
+    ],
+    "skewed_numeric_cols": [
+        "distance",
+    ],
+
+    # Modell
     "model_type": "RandomForestClassifier",
     "param_ranges": {
         "n_estimators": {"type": "int", "low": 50, "high": 300},
@@ -212,16 +274,7 @@ CLASS_OPTUNA = {
     },
     "fixed_model_params": {"class_weight": "balanced", "random_state": 42},
 
-    # Feature Definitions
-    "target": "arr_del15",
-    "numeric_cols": [
-        "year", "quarter", "month", "day_of_month", "day_of_week",
-        "crs_dep_time", "crs_arr_time", "crs_elapsed_time",
-        "distance", "distance_group",
-    ],
-    "categorical_cols": [],
-
-    # Data Definitions (Logging only)
+    # Daten (nur Logging)
     "dataset_query": "SELECT * FROM dbt_staging.flights_subset_pre_covid",
     "dataset_name": "flights_subset_pre-covid",
     "dataset_start_date": "2018-01-01",
@@ -230,13 +283,17 @@ CLASS_OPTUNA = {
     "dataset_random_seed": 0.42,
     "dataset_source": "dbt_staging.flights_subset_pre_covid",
 
-    # Registration and Evaluation
+    # Registrierung & Promotion
     "register": False,
     "model_name": "classifier",
     "alias": "champion",
     "promotion_metric": "f1",
     "promotion_mode": "maximize",
 }
+
+
+
+
 
 
 

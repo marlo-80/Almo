@@ -47,10 +47,16 @@ def split_data(df: pd.DataFrame, target: str) -> tuple:
 def run_training(train_df, val_df, config: dict):
     # Preprocessor und Modell erstellen
     preprocessor = build_preprocessor(
-        numeric_cols=config["numeric_cols"],
-        categorical_cols=config["categorical_cols"],
+        low_card_cols=config.get("low_cardinality_cols", []),
+        high_card_cols=config.get("high_cardinality_cols", []),
+        cyclic_cols=config.get("cyclic_cols", []),
+        numeric_cols=config.get("numeric_cols", []),
+        skewed_numeric_cols=config.get("skewed_numeric_cols", []),
+        low_card_strategy=config.get("low_card_strategy", "onehot"),
+        high_card_strategy=config.get("high_card_strategy", "target"),
         impute_num=config.get("impute_num", "median"),
         impute_cat=config.get("impute_cat", "most_frequent"),
+        target_type=config.get("target_type", "continuous"),
     )
     model = create_model(config["model_type"], config["model_params"])
 
@@ -132,7 +138,14 @@ def promote_if_better(config: dict, new_score: float, run_id: str, artifact_name
 
 @flow(name="flight-delay-training")
 def training_pipeline(config: dict = DEFAULT_CONFIG):
-    df = load_and_clean_data(config["dataset_query"], config["numeric_cols"])
+    all_cols = (
+        config.get("low_cardinality_cols", []) +
+        config.get("high_cardinality_cols", []) +
+        config.get("cyclic_cols", []) +
+        config.get("numeric_cols", []) +
+        config.get("skewed_numeric_cols", [])
+    )
+    df = load_and_clean_data(config["dataset_query"], all_cols)
     train, val, test = split_data(df, config["target"])
     pipeline, score, run_id, artifact_name = run_training(train, val, config)   # run_training muss den rmse zurückgeben!
     if config.get("alias"):                              # nur wenn Alias gesetzt

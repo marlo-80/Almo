@@ -1,5 +1,5 @@
 # Capstone2-Delay_Prediction_For_US_Flights_2013-2018
-This is the capstone project of Viktor and Markus. The projects goal is to predict flight delays for domestic flights in the US as a use case for a complete Machine Learning Engineering setup. 
+This is the capstone project of Viktor and Markus. The projects goal is to predict flight delays for domestic flights in the US as a use case for a complete machine learning engineering setup. We analyze millions of historical U.S. flight records to predict arrival delays, both as a continuous value (minutes) and as a binary yes/no. Our pipeline, orchestrated by Prefect, automatically transforms raw data with dbt, trains models tracked in MLflow, and serves predictions through a FastAPI endpoint. A traffic simulator continuously sends requests to mimic real-world usage, while Prometheus and Grafana monitor the API's health and performance. The entire system runs in Docker, ensuring it's reproducible and ready to detect data drift with Evidently, which will trigger retraining when the world (or the data) changes.
 
 ## Prerequisites
 - Docker & Docker Compose installed

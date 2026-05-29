@@ -3,7 +3,7 @@ dbt-core==1.8.0
 dbt-postgres==1.8.0
 fastapi==0.136.0
 httpx==0.28.1
-kagglehub
+kagglehub==0.3.10
 mlflow==3.11.1
 optuna==4.1.0
 optuna-integration[mlflow]==4.1.0   # MLflow-Callback

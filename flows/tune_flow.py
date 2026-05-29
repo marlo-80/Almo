@@ -29,12 +29,17 @@ def load_and_prepare_data(config: dict) -> tuple:
 
 @task
 def build_preprocessor_task(config: dict):
-    """Baut den Preprocessor aus der Config."""
     return build_preprocessor(
-        numeric_cols=config["numeric_cols"],
-        categorical_cols=config["categorical_cols"],
+        low_card_cols=config.get("low_cardinality_cols", []),
+        high_card_cols=config.get("high_cardinality_cols", []),
+        cyclic_cols=config.get("cyclic_cols", []),
+        numeric_cols=config.get("numeric_cols", []),
+        skewed_numeric_cols=config.get("skewed_numeric_cols", []),
+        low_card_strategy=config.get("low_card_strategy", "onehot"),
+        high_card_strategy=config.get("high_card_strategy", "target"),
         impute_num=config.get("impute_num", "median"),
         impute_cat=config.get("impute_cat", "most_frequent"),
+        target_type=config.get("target_type", "continuous"),
     )
 
 @task
