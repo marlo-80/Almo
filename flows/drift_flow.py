@@ -5,7 +5,6 @@ np.float_ = np.float64          # Workaround für NumPy‑2‑Kompatibilität vo
 import mlflow
 import pandas as pd
 from prefect import flow, task
-from sqlalchemy import create_engine
 from evidently.report import Report
 from evidently.metric_preset import DataDriftPreset
 import requests
@@ -15,26 +14,32 @@ from sklearn.metrics import (
     accuracy_score,
     precision_score,
     recall_score,
-    r2_score,                  # ← neu
+    r2_score,
 )
-from scipy.stats import skew   # ← neu
+from scipy.stats import skew
+import os
+from sqlalchemy import create_engine, text
 
 DB_URI = "postgresql://vikmar:vikmar@postgres:5432/fastapi_db"
 MLFLOW_URI = "http://mlflow:5000"
 
 
 @task
-def load_reference_data():
-    """Lädt das Pre‑COVID‑Subset als Referenz (ohne Zielspalten und IDs)."""
+def load_reference_data(month: int):
+    """Lädt Referenzdaten nur für den angegebenen Monat (1‑12) aus pre_covid_1M."""
     engine = create_engine(DB_URI)
-    query = "SELECT * FROM dbt_staging.flights_subset_pre_covid"
+    query = f"""
+        SELECT *
+        FROM dbt_staging."pre_covid_1M"
+        WHERE month = {month}
+    """
     df = pd.read_sql(query, engine)
     drop_cols = [
         "arr_delay_minutes", "arr_del15", "arr_delay", "dep_delay",
         "dep_delay_minutes", "flight_uid", "flight_date",
     ]
     df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
-    print(f"Referenzdaten geladen: {df.shape[0]} Zeilen, {df.shape[1]} Spalten")
+    print(f"Referenzdaten geladen (Monat {month}): {df.shape[0]} Zeilen, {df.shape[1]} Spalten")
     return df
 
 
@@ -77,10 +82,10 @@ def log_report(report: Report):
 
 @task
 def load_current_predictions():
-    """Lädt prediction_reg, prediction_class, ground_truth aus api.predictions."""
+    """Lädt prediction_reg, prediction_class, prediction_class_proba, ground_truth sowie input_features aus api.predictions."""
     engine = create_engine(DB_URI)
     query = """
-        SELECT prediction_reg, prediction_class, ground_truth
+        SELECT prediction_reg, prediction_class, prediction_class_proba, ground_truth, input_features
         FROM api.predictions
         ORDER BY timestamp DESC
         LIMIT 5000
@@ -88,6 +93,10 @@ def load_current_predictions():
     df = pd.read_sql(query, engine)
     df["true_reg"]   = df["ground_truth"].apply(lambda x: x.get("arr_delay_minutes") if x else None)
     df["true_class"] = df["ground_truth"].apply(lambda x: x.get("arr_del15") if x else None)
+    # Extrahiere origin_airport_id aus den gespeicherten Features (JSONB)
+    df["origin_airport_id"] = df["input_features"].apply(
+        lambda x: x.get("origin_airport_id") if isinstance(x, dict) else None
+    )
     df = df.dropna(subset=["true_reg", "true_class"])
     print(f"Validierungsdaten geladen: {df.shape[0]} Zeilen")
     return df
@@ -103,6 +112,7 @@ def compute_and_send_metrics(preds_df: pd.DataFrame):
         rate_delta = 0.0
         top_origin = 0.0
         r2 = residual_skewness = rolling_std = 0.0
+        class_confidence_mean = 0.0
     else:
         y_true_reg = preds_df["true_reg"]
         y_pred_reg = preds_df["prediction_reg"]
@@ -140,6 +150,12 @@ def compute_and_send_metrics(preds_df: pd.DataFrame):
             class_f1 = class_roc_auc = class_accuracy = 0.0
             class_precision = class_recall = class_specificity = 0.0
 
+        # Mittlere Vorhersagewahrscheinlichkeit (Klasse 1) aus der neuen Spalte
+        if "prediction_class_proba" in preds_df.columns:
+            class_confidence_mean = float(preds_df["prediction_class_proba"].mean())
+        else:
+            class_confidence_mean = 0.0
+
         # Flughafen mit den meisten Verspätungen (Origin)
         if 'origin_airport_id' in preds_df.columns:
             top_origin = float(preds_df["origin_airport_id"].value_counts().idxmax())
@@ -147,17 +163,18 @@ def compute_and_send_metrics(preds_df: pd.DataFrame):
             top_origin = 0.0
 
     # NaN/Inf abfangen
-    for var in [mae, rmse, actual_rate, predicted_rate, class_f1,
-                class_roc_auc, class_accuracy, class_precision, class_recall,
-                class_specificity, rate_delta, top_origin,
-                r2, residual_skewness, rolling_std]:
-        if var is None or np.isnan(var) or np.isinf(var):
-            var = 0.0
+    def clean(val):
+        if val is None or np.isnan(val) or np.isinf(val):
+            return 0.0
+        return float(val)
 
-    return (mae, rmse, actual_rate, predicted_rate,
-            class_f1, class_roc_auc, class_accuracy, class_precision,
-            class_recall, class_specificity, rate_delta, top_origin,
-            r2, residual_skewness, rolling_std)
+    result = tuple(clean(v) for v in [
+        mae, rmse, actual_rate, predicted_rate,
+        class_f1, class_roc_auc, class_accuracy, class_precision,
+        class_recall, class_specificity, rate_delta, top_origin,
+        r2, residual_skewness, rolling_std, class_confidence_mean
+    ])
+    return result
 
 
 @task
@@ -176,7 +193,16 @@ def compute_top_airlines(current_df: pd.DataFrame, cls_preds):
 
 @flow(name="drift-detection")
 def drift_detection_flow():
-    reference = load_reference_data()
+    # Monat aus Umgebungsvariable DRIFT_MONTH, sonst Fallback auf aktuellen Monat
+    month = int(os.environ.get("DRIFT_MONTH", 0))
+    if month == 0:
+        engine = create_engine(DB_URI)
+        with engine.connect() as conn:
+            res = conn.execute(text("SELECT EXTRACT(MONTH FROM MAX(timestamp)) FROM api.predictions"))
+            month = int(res.scalar() or 1)
+    print(f"Drift-Vergleich für Monat: {month}")
+
+    reference = load_reference_data(month)
     current = load_current_features()
 
     # Nur Spalten vergleichen, die in beiden Datensätzen vorkommen
@@ -195,7 +221,6 @@ def drift_detection_flow():
     print(f"Spalten für Drift-Analyse: {valid_cols}")
 
     # --- Drift Booster für Demo (aktivierbar über Umgebungsvariable) -------
-    import os
     if os.environ.get("DRIFT_BOOST", "0") == "1":
         print("☢️ Nuklearer Drift-Boost aktiviert: Alle numerischen Features werden massiv verändert.")
         num_cols = current.select_dtypes(include=[np.number]).columns
@@ -212,7 +237,7 @@ def drift_detection_flow():
     (mae, rmse, actual_rate, predicted_rate,
      class_f1, class_roc_auc, class_accuracy, class_precision,
      class_recall, class_specificity, rate_delta, top_origin,
-     r2, residual_skewness, rolling_std) = compute_and_send_metrics(preds_df)
+     r2, residual_skewness, rolling_std, class_confidence_mean) = compute_and_send_metrics(preds_df)
 
     # Top‑Airlines berechnen
     cls_preds = preds_df["prediction_class"].values if not preds_df.empty else []
@@ -244,6 +269,7 @@ def drift_detection_flow():
                 "r2": r2,
                 "residual_skewness": residual_skewness,
                 "stddev_rolling": rolling_std,
+                "class_confidence_mean": class_confidence_mean,
             },
             timeout=10,
         )
@@ -265,6 +291,13 @@ def drift_detection_flow():
 
     # Report in MLflow loggen
     log_report(report)
+
+    # Exakte prediction_rows aus der Datenbank setzen
+    try:
+        requests.post("http://api:8000/admin/data-stats", timeout=5)
+        print("Data-Stats aktualisiert.")
+    except Exception as e:
+        print(f"Fehler beim Aktualisieren der Data-Stats: {e}")
 
 
 if __name__ == "__main__":

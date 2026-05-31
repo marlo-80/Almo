@@ -35,7 +35,10 @@ async def lifespan(app: FastAPI):
         alias = cfg["alias"]
         model_uri = f"models:/{model_name}@{alias}"
         try:
-            pipeline = mlflow.pyfunc.load_model(model_uri)
+            if task == "classification":
+                pipeline = mlflow.sklearn.load_model(model_uri)   # sklearn-Pipeline mit predict_proba
+            else:
+                pipeline = mlflow.pyfunc.load_model(model_uri)
             mv = client.get_model_version_by_alias(model_name, alias)
             version_str = f"{model_name}_v{mv.version}@{alias}"
             setattr(app.state, f"{task}_pipeline", pipeline)
@@ -91,7 +94,7 @@ async def lifespan(app: FastAPI):
             gauge.set(0.0)
 
     # ----- Drift‑Baseline (konstant) -----
-    DRIFT_BASELINE.set(0.0625)
+    DRIFT_BASELINE.set(0.05)
 
     yield
 
@@ -184,11 +187,9 @@ async def predict(request: Request):
         reg_pred = app.state.regression_pipeline.predict(df)[0]
 
         # Klassifikation
+        # Klassifikation
         class_pred = app.state.classification_pipeline.predict(df)[0]
-        try:
-            class_proba = app.state.classification_pipeline.predict_proba(df)[0, 1]
-        except Exception:
-            class_proba = None
+        class_proba = app.state.classification_pipeline.predict_proba(df)[0, 1]
 
         pred_duration = time.time() - t0
         PREDICTION_DURATION_SECONDS.observe(pred_duration)
@@ -202,9 +203,11 @@ async def predict(request: Request):
                 text("""
                     INSERT INTO api.predictions
                         (flight_uid, input_features, prediction_reg, prediction_class,
-                         model_version_reg, model_version_class, ground_truth)
+                         model_version_reg, model_version_class, ground_truth,
+                         prediction_class_proba)
                     VALUES (:flight_uid, :features, :pred_reg, :pred_class,
-                            :version_reg, :version_class, :gt)
+                            :version_reg, :version_class, :gt,
+                            :pred_class_proba)
                 """),
                 {
                     "flight_uid": flight_uid,
@@ -214,10 +217,12 @@ async def predict(request: Request):
                     "version_reg": app.state.regression_version,
                     "version_class": app.state.classification_version,
                     "gt": json.dumps(ground_truth) if ground_truth else None,
+                    "pred_class_proba": float(class_proba),
                 }
             )
             conn.commit()
         DB_WRITE_DURATION_SECONDS.observe(time.time() - t0_db)
+        PREDICTION_ROWS.inc()
 
         PREDICTION_COUNT.inc()
 

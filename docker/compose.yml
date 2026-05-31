@@ -10,7 +10,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DB_CONN: postgresql://${POSTGRES_USER:-vikmar}:${POSTGRES_PASSWORD:-vikmar}@postgres:5432/fastapi_db
+      DB_URI: postgresql://${POSTGRES_USER:-vikmar}:${POSTGRES_PASSWORD:-vikmar}@postgres:5432/fastapi_db
       PREFECT_API_URL: http://prefect:4200/api
       MODEL_NAME: test_name           # ← neu
       MODEL_ALIAS: champion           # ← neu

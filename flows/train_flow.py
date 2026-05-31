@@ -18,6 +18,7 @@ from mlflow.tracking import MlflowClient
 from src.train import create_model
 
 import mlflow
+import requests
 
 
 @task

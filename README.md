@@ -23,7 +23,7 @@ docker compose -f docker/compose.yml up -d
 
 When the stack is running, the local endpoints are:
 - `FastAPI/Uvicorn`: `http://127.0.0.1:8000`
-- `Grafana`: `http://127.0.0.1:4200`
+- `Grafana`: `http://127.0.0.1:3000`
 - `MLflow`: `http://127.0.0.1:5001`
 - `Prefect`: `http://127.0.0.1:4200`
 - `Postgres`: `http://127.0.0.1:5432`
@@ -66,6 +66,16 @@ Run dbt. Several data models will be build:<br>
 ```bash
 docker compose -f docker/compose.yml exec api dbt run --project-dir /app/dbt --profiles-dir /app/dbt
 ```
+
+<br>
+
+If you want to build only the model(s) that haven`t been built yet, run this command instead:
+
+```bash
+docker compose -f docker/compose.yml exec api dbt run --select state:modified+ --project-dir /app/dbt --profiles-dir /app/dbt
+```
+
+<br>
 
 You can improve the performance by removing the first double dash (--) in `--AND random() < 0.1` in every file that is in `/dbt/models/training`. However, this will lead to slightly different data in the resulting dbt models. 
 

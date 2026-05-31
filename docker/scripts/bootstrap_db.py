@@ -30,7 +30,8 @@ def bootstrap():
                 prediction_class INTEGER,
                 model_version_reg TEXT,
                 model_version_class TEXT,
-                ground_truth JSONB DEFAULT NULL
+                ground_truth JSONB DEFAULT NULL,
+                prediction_class_proba DOUBLE PRECISION DEFAULT NULL
             );
         """))
         conn.commit()

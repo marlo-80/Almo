@@ -30,6 +30,9 @@ cls = mlflow.pyfunc.load_model("models:/classifier@champion")
 
 # --- Daten laden -----------------------------------------------------------
 engine = create_engine(DB_URI)
+with engine.connect() as conn:
+    conn.execute(text("SELECT setseed(0.123456789)"))
+
 query = f"""
     SELECT *
     FROM {SOURCE_TABLE}
@@ -39,6 +42,10 @@ query = f"""
     LIMIT {approx_rows}
 """
 df = pd.read_sql(query, engine)
+if len(df) == 0:
+    print(f"Keine Zeilen für den Zeitraum {start_date} – {end_date} gefunden. Überspringe Batch.")
+    sys.exit(0)
+
 print(f"Geladene Zeilen: {len(df)}")
 
 # --- Ground‑Truth sichern ---------------------------------------------------
