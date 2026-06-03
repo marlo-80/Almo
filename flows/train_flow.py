@@ -112,6 +112,13 @@ def promote_if_better(config: dict, new_score: float, run_id: str, artifact_name
         client.set_registered_model_alias(model_name, alias, registered.version)
         print(f"Neuer Champion: {model_name} v{registered.version}")
 
+        # Drift‑Alarm zurücksetzen, weil ein neuer Champion gesetzt wurde
+        try:
+            requests.post("http://api:8000/admin/drift-alarm", json={"active": 0}, timeout=5)
+            print("Drift-Alarm zurückgesetzt.")
+        except Exception as e:
+            print(f"Fehler beim Zurücksetzen des Drift-Alarms: {e}")
+
         # Champion-Metriken dynamisch an die API senden (nur vorhandene)
         champion_payload = {}
         # Regressor
@@ -137,6 +144,13 @@ def promote_if_better(config: dict, new_score: float, run_id: str, artifact_name
         # API‑Reload triggern
         try:
             requests.post("http://api:8000/admin/reload-model", timeout=5)
+            # Retrain‑Status an Grafana melden (NEU)
+            try:
+                requests.post("http://api:8000/admin/retrain-status", json={"new_champion": 1}, timeout=5)
+                print("Retrain-Status gesendet.")
+            except Exception as e:
+                print(f"Fehler beim Senden des Retrain-Status: {e}")
+
         except Exception as e:
             print(f"Webhook failed: {e}")
 

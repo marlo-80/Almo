@@ -12,6 +12,10 @@ API_MODELS = {
     },
 }
 
+
+
+
+
 ######################################################################################################
 #                                              Default CONFIG                                        #
 ######################################################################################################
@@ -86,13 +90,13 @@ REG = {
     "model_params": {"n_estimators": 20, "max_depth": 5, "random_state": 42},
 
     # Daten (nur Logging)
-    "dataset_query": "SELECT * FROM dbt_staging.flights_subset_pre_covid",
-    "dataset_name": "flights_subset_pre-covid",
+    "dataset_query": "SELECT * FROM dbt_staging.pre_covid_test",
+    "dataset_name": "pre_covid_test",
     "dataset_start_date": "2018-01-01",
     "dataset_end_date": "2020-01-01",
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
-    "dataset_source": "dbt_staging.flights_subset_pre_covid",
+    "dataset_source": "dbt_staging.pre_covid_test",
 
     # Registrierung & Promotion
     "register": False,
@@ -143,13 +147,13 @@ CLASS = {
     "model_params": {"n_estimators": 20, "max_depth": 2, "class_weight": "balanced", "random_state": 42},
 
     # Daten (nur Logging)
-    "dataset_query": "SELECT * FROM dbt_staging.flights_subset_pre_covid",
-    "dataset_name": "flights_subset_pre-covid",
+    "dataset_query": "SELECT * FROM dbt_staging.pre_covid_test",
+    "dataset_name": "pre_covid_test",
     "dataset_start_date": "2018-01-01",
     "dataset_end_date": "2020-01-01",
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
-    "dataset_source": "dbt_staging.flights_subset_pre_covid",
+    "dataset_source": "dbt_staging.pre_covid_test",
 
     # Registrierung & Promotion
     "register": False,
@@ -292,6 +296,21 @@ OPTUNA_CLASS = {
 }
 
 
+
+
+DRIFT_RETRAIN_REG = {
+    **REG,
+    "run_name": "drift_retrain_reg",
+    "dataset_query": "SELECT * FROM dbt_staging.retrain",
+    "target_table": "dbt_staging.retrain",   # <-- NEU
+}
+
+DRIFT_RETRAIN_CLASS = {
+    **CLASS,
+    "run_name": "drift_retrain_class",
+    "dataset_query": "SELECT * FROM dbt_staging.retrain",
+    "target_table": "dbt_staging.retrain",   # <-- NEU
+}
 
 
 

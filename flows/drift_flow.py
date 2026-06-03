@@ -26,11 +26,11 @@ MLFLOW_URI = "http://mlflow:5000"
 
 @task
 def load_reference_data(month: int):
-    """Lädt Referenzdaten nur für den angegebenen Monat (1‑12) aus pre_covid_1M."""
+    """Lädt Referenzdaten nur für den angegebenen Monat (1‑12) aus pre_covid_test."""
     engine = create_engine(DB_URI)
     query = f"""
         SELECT *
-        FROM dbt_staging."pre_covid_1M"
+        FROM dbt_staging."pre_covid_test"
         WHERE month = {month}
     """
     df = pd.read_sql(query, engine)
@@ -308,6 +308,12 @@ def drift_detection_flow():
         print("Data-Stats aktualisiert.")
     except Exception as e:
         print(f"Fehler beim Aktualisieren der Data-Stats: {e}")
+
+
+    if drift_score > 0.5:  # oder dein dynamischer Schwellwert
+        print("Drift-Alarm! Triggere Retraining…")
+        requests.post("http://api:8000/admin/drift-alarm", json={"active": 1})
+        requests.post("http://api:8000/admin/retrain", timeout=5)
 
 
 if __name__ == "__main__":

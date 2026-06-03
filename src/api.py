@@ -93,8 +93,21 @@ async def lifespan(app: FastAPI):
         except Exception:
             gauge.set(0.0)
 
+    # ----- Champion‑Modell‑Info in Prometheus bereitstellen -----
+    CHAMPION_MODEL_INFO.clear()
+    if app.state.regression_pipeline is not None:
+        CHAMPION_MODEL_INFO.labels(
+            model="regressor",
+            version=app.state.regression_version
+        ).set(1)
+    if app.state.classification_pipeline is not None:
+        CHAMPION_MODEL_INFO.labels(
+            model="classifier",
+            version=app.state.classification_version
+        ).set(1)
+
     # ----- Drift‑Baseline (konstant) -----
-    #DRIFT_BASELINE.set(0.05)
+    # DRIFT_BASELINE.set(0.05)
 
     yield
 
@@ -161,20 +174,17 @@ PREDICTION_DURATION_SECONDS = Histogram("prediction_duration_seconds", "Model pr
 DB_WRITE_DURATION_SECONDS = Histogram("db_write_duration_seconds", "Duration of INSERT into api.predictions")
 MODEL_LOAD_DURATION_SECONDS = Gauge("model_load_duration_seconds", "Time to load models from MLflow at startup")
 
-
-### Ganz neu!
+# – Neue Metriken für Demo / Retraining
+RETRAIN_STATUS = Gauge("retrain_status", "1 if new champion was promoted after drift retraining")
 DRIFT_BASELINE_DYNAMIC = Gauge("drift_baseline_dynamic", "Monatlich angepasste Drift-Baseline")
-
-@app.post("/admin/baseline")
-async def set_baseline(data: dict):
-    """Setzt die dynamische Baseline (für Demo‑Zwecke)."""
-    value = float(data.get("value", 0.05))
-    DRIFT_BASELINE_DYNAMIC.set(value)
-    return {"status": "ok", "baseline": value}
+CHAMPION_MODEL_INFO = Gauge(
+    "champion_model_info",
+    "Current champion model version",
+    ["model", "version"]
+)
 
 
-
-
+DRIFT_ALARM_ACTIVE = Gauge("drift_alarm_active", "1 while drift alarm is active, 0 otherwise")
 
 class PredictionOutput(BaseModel):
     regression_prediction: float
@@ -200,7 +210,6 @@ async def predict(request: Request):
         # Regression
         reg_pred = app.state.regression_pipeline.predict(df)[0]
 
-        # Klassifikation
         # Klassifikation
         class_pred = app.state.classification_pipeline.predict(df)[0]
         class_proba = app.state.classification_pipeline.predict_proba(df)[0, 1]
@@ -237,7 +246,6 @@ async def predict(request: Request):
             conn.commit()
         DB_WRITE_DURATION_SECONDS.observe(time.time() - t0_db)
         PREDICTION_ROWS.inc()
-
         PREDICTION_COUNT.inc()
 
         return PredictionOutput(
@@ -251,20 +259,58 @@ async def predict(request: Request):
 
 @app.post("/admin/reload-model")
 async def reload_model():
-    """Lädt beide Modelle neu aus der Registry."""
+    """Lädt beide Modelle neu aus der Registry und aktualisiert Metriken (Alter, Version)."""
+    from datetime import datetime, timezone
+
     client = MlflowClient()
     start_reload = time.time()
+
+    # Modelle neu laden
     for task, cfg in API_MODELS.items():
         model_uri = f"models:/{cfg['model_name']}@{cfg['alias']}"
         try:
-            pipeline = mlflow.pyfunc.load_model(model_uri)
+            if task == "classification":
+                pipeline = mlflow.sklearn.load_model(model_uri)   # für predict_proba
+            else:
+                pipeline = mlflow.pyfunc.load_model(model_uri)
+
             mv = client.get_model_version_by_alias(cfg["model_name"], cfg["alias"])
             version_str = f"{cfg['model_name']}_v{mv.version}@{cfg['alias']}"
             setattr(app.state, f"{task}_pipeline", pipeline)
             setattr(app.state, f"{task}_version", version_str)
+            print(f"Modell '{task}' neu geladen: {version_str}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Reload failed for {task}: {e}")
+
+    # Ladezeit der Modelle
     MODEL_LOAD_DURATION_SECONDS.set(time.time() - start_reload)
+
+    # Champion‑Modell‑Info (Labels) aktualisieren
+    CHAMPION_MODEL_INFO.clear()
+    if app.state.regression_pipeline is not None:
+        CHAMPION_MODEL_INFO.labels(
+            model="regressor",
+            version=app.state.regression_version
+        ).set(1)
+    if app.state.classification_pipeline is not None:
+        CHAMPION_MODEL_INFO.labels(
+            model="classifier",
+            version=app.state.classification_version
+        ).set(1)
+
+    # Modellalter (beide Modelle) neu berechnen
+    for model_name, gauge in [('regressor', MODEL_AGE_HOURS_REGRESSOR),
+                               ('classifier', MODEL_AGE_HOURS_CLASSIFIER)]:
+        try:
+            mv = client.get_model_version_by_alias(model_name, 'champion')
+            run = client.get_run(mv.run_id)
+            start_time = run.info.start_time / 1000.0   # Millisekunden → Sekunden
+            age_seconds = datetime.now(timezone.utc).timestamp() - start_time
+            gauge.set(age_seconds / 3600.0)             # Stunden
+        except Exception as e:
+            print(f"WARNUNG: Konnte Alter für {model_name} nicht berechnen: {e}")
+            gauge.set(0.0)
+
     return {"status": "reloaded"}
 
 
@@ -331,6 +377,173 @@ async def update_top_airlines(data: dict):
             airline=entry["airline"]
         ).set(entry["rate"])
     return {"status": "ok"}
+
+
+@app.post("/admin/baseline")
+async def set_baseline(data: dict):
+    """Setzt die dynamische Baseline (für Demo‑Zwecke)."""
+    value = float(data.get("value", 0.05))
+    DRIFT_BASELINE_DYNAMIC.set(value)
+    return {"status": "ok", "baseline": value}
+
+
+@app.post("/admin/retrain")
+async def trigger_retrain():
+    """Schreibt Predictions in die Trainingsbasis und startet dann das Retraining."""
+    import subprocess
+    from sqlalchemy import text as sa_text
+    from flows.config import DRIFT_RETRAIN_REG   # für den Tabellennamen
+
+    target_table = DRIFT_RETRAIN_REG["target_table"]   # z. B. "dbt_staging.training_with_drift"
+
+    with engine.connect() as conn:
+        # Prüfen, ob die Zieltabelle existiert – falls nicht, aus pre_covid_test erstellen
+        exists = conn.execute(
+            sa_text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='dbt_staging' AND table_name=:tbl)"),
+            {"tbl": target_table}
+        ).scalar()
+        if not exists:
+            conn.execute(sa_text(f"CREATE TABLE dbt_staging.{target_table} (LIKE dbt_staging.pre_covid_test)"))
+            conn.execute(sa_text(f"INSERT INTO dbt_staging.{target_table} SELECT * FROM dbt_staging.pre_covid_test"))
+            conn.commit()
+
+        # Spaltenstruktur der Zieltabelle abrufen
+        cols = conn.execute(
+            sa_text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='dbt_staging' AND table_name=:tbl ORDER BY ordinal_position"),
+            {"tbl": target_table}
+        ).fetchall()
+        col_names = [c[0] for c in cols]
+
+        type_cast_map = {
+            'integer': 'bigint', 'bigint': 'bigint', 'smallint': 'bigint',
+            'double precision': 'float', 'real': 'float', 'numeric': 'float',
+            'text': 'text', 'character varying': 'text',
+            'date': 'date', 'timestamp without time zone': 'timestamp',
+            'timestamp with time zone': 'timestamptz', 'boolean': 'boolean'
+        }
+
+        select_parts = []
+        for col_name, col_type in cols:
+            pg_type = col_type.lower()
+            if col_name == 'flight_uid':
+                select_parts.append('flight_uid')
+            elif col_name == 'flight_date':
+                select_parts.append('timestamp::date')
+            elif col_name == 'arr_delay_minutes':
+                select_parts.append("(ground_truth->>'arr_delay_minutes')::float")
+            elif col_name == 'arr_del15':
+                select_parts.append("(ground_truth->>'arr_del15')::int")
+            else:
+                cast = type_cast_map.get(pg_type, 'text')
+                select_parts.append(f"(input_features->>'{col_name}')::{cast}")
+
+        insert_sql = f"""
+            INSERT INTO {target_table} ({', '.join(col_names)})
+            SELECT {', '.join(select_parts)}
+            FROM api.predictions
+            WHERE ground_truth IS NOT NULL
+        """
+        conn.execute(sa_text(insert_sql))
+        conn.commit()
+
+    # Training starten
+    def run_training(config_name):
+        subprocess.Popen(
+            ["python", "flows/train_flow.py", config_name],
+            cwd="/app",
+            env={**os.environ, "PYTHONPATH": "/app", "PYTHONUNBUFFERED": "1"}
+        )
+
+    run_training("DRIFT_RETRAIN_REG")
+    run_training("DRIFT_RETRAIN_CLASS")
+    return {"status": "retraining_started", "message": "Predictions inserted, training launched."}
+
+
+@app.post("/admin/retrain-status")
+async def set_retrain_status(data: dict):
+    RETRAIN_STATUS.set(int(data.get("new_champion", 0)))
+    return {"status": "ok"}
+
+
+@app.post("/admin/drift-alarm")
+async def set_drift_alarm(data: dict):
+    active = int(data.get("active", 0))
+    DRIFT_ALARM_ACTIVE.set(active)
+    # Hier muss retrain_status auf 0 gesetzt werden!!!
+    # Setze retrain_status auf 0, sobald der Alarm gesetzt wird
+    RETRAIN_STATUS.set(0)
+    
+    return {"status": "ok", "active": active}
+
+@app.post("/admin/init-champion-metrics")
+async def init_champion_metrics():
+    """Setzt alle Champion-Metriken und initialisiert Drift-Metriken mit Champion-Werten."""
+    client = MlflowClient()
+    try:
+        for model_name in ['regressor', 'classifier']:
+            mv = client.get_model_version_by_alias(model_name, 'champion')
+            run = client.get_run(mv.run_id)
+            metrics = run.data.metrics
+            if model_name == 'regressor':
+                rmse = metrics.get('rmse', 0.0)
+                mae = metrics.get('mae', 0.0)
+                r2 = metrics.get('r2', 0.0)
+                res_skew = metrics.get('residual_skewness', 0.0)
+
+                CHAMPION_REGRESSOR_RMSE.set(rmse)
+                CHAMPION_REGRESSOR_MAE.set(mae)
+                CHAMPION_REGRESSOR_R2.set(r2)
+                CHAMPION_REGRESSOR_RESIDUAL_SKEWNESS.set(res_skew)
+
+                # Drift-Metriken starten auf Champion-Niveau
+                DRIFT_REGRESSOR_RMSE.set(rmse)
+                DRIFT_MAE.set(mae)
+                DRIFT_REGRESSOR_R2.set(r2)
+                DRIFT_RESIDUAL_SKEWNESS.set(res_skew)
+
+            else:   # classifier
+                f1 = metrics.get('f1', 0.0)
+                roc_auc = metrics.get('roc_auc', 0.0)
+                acc = metrics.get('accuracy', 0.0)
+                prec = metrics.get('precision', 0.0)
+                rec = metrics.get('recall', 0.0)
+                spec = metrics.get('specificity', 0.0)
+                conf_mean = metrics.get('confidence_mean', 0.0)
+
+                CHAMPION_CLASSIFIER_F1.set(f1)
+                CHAMPION_CLASSIFIER_ROC_AUC.set(roc_auc)
+                CHAMPION_CLASSIFIER_ACCURACY.set(acc)
+                CHAMPION_CLASSIFIER_PRECISION.set(prec)
+                CHAMPION_CLASSIFIER_RECALL.set(rec)
+                CHAMPION_CLASSIFIER_SPECIFICITY.set(spec)
+                CHAMPION_CLASSIFIER_CONFIDENCE_MEAN.set(conf_mean)
+
+                # Drift-Metriken starten auf Champion-Niveau
+                DRIFT_CLASS_F1.set(f1)
+                DRIFT_CLASS_ROC_AUC.set(roc_auc)
+                DRIFT_CLASS_ACCURACY.set(acc)
+                DRIFT_CLASS_PRECISION.set(prec)
+                DRIFT_CLASS_RECALL.set(rec)
+                DRIFT_CLASS_SPECIFICITY.set(spec)
+                DRIFT_CLASS_CONFIDENCE_MEAN.set(conf_mean)
+
+        # Champion-Modell-Info aus MLflow laden (damit das Panel sofort die richtigen Namen zeigt)
+        CHAMPION_MODEL_INFO.clear()
+        try:
+            for model_name in ['regressor', 'classifier']:
+                mv = client.get_model_version_by_alias(model_name, 'champion')
+                version_str = f"{model_name}_v{mv.version}@champion"
+                CHAMPION_MODEL_INFO.labels(model=model_name, version=version_str).set(1)
+        except Exception as e:
+            print(f"WARNUNG: Konnte Champion-Modell-Info nicht laden – {e}")
+
+        DRIFT_SCORE.set(0.05)
+        RETRAIN_STATUS.set(1)
+
+        return {"status": "ok", "message": "Champion metrics loaded and drift metrics initialized"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get("/health")
