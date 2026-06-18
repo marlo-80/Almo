@@ -4,8 +4,10 @@ This is the capstone project of the Data Science and Machine Learning Engineerin
  - A covid data drift demo where predictions are generated on a monthly basis stating in January 2020. It shows how prediction data deviates from training data with the onset of the covid pandemia. In June 2020 the data drift threshold is exceeded an the training of new models in initialized. If the new model performs better than the old one it is automatically registered as the default model for the prediction API.
  
 
- ## Disclaimer
+ ### Disclaimer
  The model performance to predict flight delays is not good at all. Data provided by the Bureau of Transportation Statistics are not sufficient for reliable delay predictions. The models only purpose is to demonstrate the surrounding frame work.  
+
+<br><br>
 
 ## Prerequisites
 - Docker & Docker Compose installed
@@ -180,6 +182,8 @@ Create data sets for pre-Covid flights and intra-Covid flights. Make `covid_data
 <br><br>
 
 ## Miscellaneous
+Here you find information that facilitates the understanding of how to utilize the modeling framework 
+
 
 ### Recreation of the api.predictions table in PostgreSQL
 
@@ -244,8 +248,9 @@ This is an example:
 docker compose -f docker/compose.yml exec -e PYTHONPATH=/app api python docker/scripts/batch_inject.py 2020-04-01 2020-10-01 1000
 ```
 
+<br>
 
-# Helpfull commands:
+### Helpfull commands:
 
 Deletion of data in api.predictions with index reset
 ```bash
