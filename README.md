@@ -158,6 +158,19 @@ Results of the training run can  be found in [MLFlow](http://127.0.0.1:5001). Me
 
 <br><br>
 
+## How to run the traffic simulator
+The traffic simulator is a script that is deployed in its own docker container. To start the traffic simulator just start the corresponding docker container.
+```bash
+docker compose -f docker/compose.yml up -d simulator
+```
+Stopping the container will stop the traffic:
+```bash
+docker compose -f docker/compose.yml down simulator
+```
+
+<br>
+
+
 ## How to run the Covid data drift experiment
 Create data sets for pre-Covid flights and intra-Covid flights. Make `covid_data_drift_demo.-sh` in `Demo` executable and run the the script: 
 ```bash
@@ -253,64 +266,4 @@ docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db 
 Query drift score directly from prometheus
 ```bash
 curl -s "http://localhost:9090/api/v1/query?query=data_drift_score"    
-```
-
-
-```bash
-
-docker compose -f docker/compose.yml exec api python -c "
-import mlflow, requests, json
-from mlflow.tracking import MlflowClient
-mlflow.set_tracking_uri('http://mlflow:5000')
-client = MlflowClient()
-
-payload = {}
-for model_name in ['regressor', 'classifier']:
-    try:
-        mv = client.get_model_version_by_alias(model_name, 'champion')
-        run = client.get_run(mv.run_id)
-        metrics = run.data.metrics
-        if model_name == 'regressor':
-            payload['regressor_rmse'] = metrics.get('rmse', 0.0)
-            payload['regressor_mae']  = metrics.get('mae', 0.0)
-        else:
-            payload['classifier_f1']       = metrics.get('f1', 0.0)
-            payload['classifier_roc_auc']  = metrics.get('roc_auc', 0.0)
-            payload['classifier_accuracy'] = metrics.get('accuracy', 0.0)
-            payload['classifier_precision'] = metrics.get('precision', 0.0)
-            payload['classifier_recall']   = metrics.get('recall', 0.0)
-    except Exception as e:
-        print(f'{model_name}: Fehler – {e}')
-
-if payload:
-    r = requests.post('http://api:8000/admin/champion-metrics', json=payload, timeout=5)
-    print(f'Setzen der Champion-Metriken: {r.status_code}')
-    print(json.dumps(payload, indent=2))
-else:
-    print('Keine Metriken gefunden.')
-"
-```
-
-
-
-```bash
-./docker/scripts/demo_drift.sh  
-```
-
-```bash
-docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/drift_flow.py
-
-```
-
-```bash
-curl -s "http://localhost:9090/api/v1/query?query=data_drift_score"  
-```
-
-```bash
-docker compose -f docker/compose.yml exec -e PYTHONPATH=/app api python docker/scripts/batch_inject.py 2018-01-01 2020-01-01 40000 dbt_staging.flights_subset_pre_covid
-
-```
-
-```bash
-
 ```
