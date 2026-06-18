@@ -1,5 +1,11 @@
-# Capstone2-Delay_Prediction_For_US_Flights_2013-2018
-This is the capstone project of Viktor and Markus. The projects goal is to predict flight delays for domestic flights in the US as a use case for a complete machine learning engineering setup. We analyze millions of historical U.S. flight records to predict arrival delays, both as a continuous value (minutes) and as a binary yes/no. Our pipeline, orchestrated by Prefect, automatically transforms raw data with dbt, trains models tracked in MLflow, and serves predictions through a FastAPI endpoint. A traffic simulator continuously sends requests to mimic real-world usage, while Prometheus and Grafana monitor the API's health and performance. The entire system runs in Docker, ensuring it's reproducible and ready to detect data drift with Evidently, which will trigger retraining when the world (or the data) changes.
+# Imhotep: A Modeling-Framework for BTS Flight Data with Delay Prediction API
+This is the capstone project of the Data Science and Machine Learning Engineering boot camp I was trained in from November 2025 until June 2026. The projects goal is to predict flight delays for domestic flights in the US as a use case for a complete machine learning engineering setup. In the project millions of historical U.S. flight records are analyzed to predict arrival delays, both as a continuous value (minutes) and as a binary decision (yes/no). Our pipeline, orchestrated by Prefect, automatically transforms raw data into dbt models, trains machine learning models tracked in MLflow, and serves predictions through a FastAPI endpoint. Evidently analyses the data of prediction requests and creates an alarm when data drift above a defined threshold is detected. The entire system runs in Docker, ensuring it's reproducible. To demonstrate the capabilities of this project two demos are included:
+ - A traffic simulator that continuously sends requests to demonstrate the FastAPI endpoint, while Prometheus and Grafana monitor the API's health and performance. 
+ - A covid data drift demo where predictions are generated on a monthly basis stating in January 2020. It shows how prediction data deviates from training data with the onset of the covid pandemia. In June 2020 the data drift threshold is exceeded an the training of new models in initialized. If the new model performs better than the old one it is automatically registered as the default model for the prediction API.
+ 
+
+ ## Disclaimer
+ The model performance to predict flight delays is not good at all. Data provided by the Bureau of Transportation Statistics are not sufficient for reliable delay predictions. The models only purpose is to demonstrate the surrounding frame work.  
 
 ## Prerequisites
 - Docker & Docker Compose installed
@@ -135,7 +141,7 @@ Results of the training run can  be found in [MLFlow](http://127.0.0.1:5001). Me
 
 <br><br>
 ## How to Tune a New Model
-Our modeling pipeline is also capable of hyper parameter tuning with Optuna. Everything that needs to be defined for an Optuna run can also be done via the `config.py`. The principle is very much the same, but instead of defining model parameters you need to define parameter ranges for the model and some new parameter to control Optunas behaviour. These are the additional parameters for Optuna:
+The modeling pipeline is also capable of hyper parameter tuning with Optuna. Everything that needs to be defined for an Optuna run can also be done via the `config.py`. The principle is very much the same, but instead of defining model parameters you need to define parameter ranges for the model and some new parameter to control Optunas behaviour. These are the additional parameters for Optuna:
 
 
 | Key | Type | Description | Example / Possible values |
@@ -153,9 +159,9 @@ Results of the training run can  be found in [MLFlow](http://127.0.0.1:5001). Me
 <br><br>
 
 ## How to run the Covid data drift experiment
-Create data sets for pre-Covid flights and intra-Covid flights.
+Create data sets for pre-Covid flights and intra-Covid flights. Make `covid_data_drift_demo.-sh` in `Demo` executable and run the the script: 
 ```bash
-
+./Demo/covid_data_drift_demo.sh
 ```
 
 <br><br>
