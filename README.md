@@ -1,4 +1,13 @@
 # Imhotep: A Modeling-Framework for BTS Flight Data with Delay Prediction API
+
+---
+
+<p align="center">
+<img src="Demo/Pipeline_metaphor6.png" alt="Description" width="800">
+</p>
+
+---
+
 This is the capstone project of the Data Science and Machine Learning Engineering boot camp I was trained in from November 2025 until June 2026. The projects goal is to predict flight delays for domestic flights in the US as a use case for a complete machine learning engineering setup. In the project millions of historical U.S. flight records are analyzed to predict arrival delays, both as a continuous value (minutes) and as a binary decision (yes/no). Our pipeline, orchestrated by Prefect, automatically transforms raw data into dbt models, trains machine learning models tracked in MLflow, and serves predictions through a FastAPI endpoint. Evidently analyses the data of prediction requests and creates an alarm when data drift above a defined threshold is detected. The entire system runs in Docker, ensuring it's reproducible. To demonstrate the capabilities of this project two demos are included:
  - A traffic simulator that continuously sends requests to demonstrate the FastAPI endpoint, while Prometheus and Grafana monitor the API's health and performance. 
  - A covid data drift demo where predictions are generated on a monthly basis stating in January 2020. It shows how prediction data deviates from training data with the onset of the covid pandemia. In June 2020 the data drift threshold is exceeded an the training of new models in initialized. If the new model performs better than the old one it is automatically registered as the default model for the prediction API.
