@@ -1,4 +1,4 @@
-# Imhotep: A Modeling-Framework for BTS Flight Data with Delay Prediction API
+# Almo: A Modeling-Framework for BTS Flight Data with Delay Prediction API
 
 ---
 
