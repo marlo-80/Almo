@@ -1,211 +1,282 @@
-# Almo: A Modeling-Framework for BTS Flight Data with Delay Prediction API
-
----
+# Almo – A Modeling Framework for BTS Flight Data with Delay Prediction API
 
 <p align="center">
-<img src="Demo/Pipeline_metaphor6.png" alt="Description" width="800">
+<img src="Demo/Pipeline_metaphor6.png" alt="Almo Pipeline Overview" width="800">
 </p>
 
----
+Almo is a complete machine learning engineering framework for predicting domestic flight delays in the United States. It analyzes millions of historical flight records from the Bureau of Transportation Statistics to predict arrival delays—both as a continuous value (minutes) and as a binary yes/no decision. The pipeline, orchestrated by **Prefect**, automatically transforms raw data with **dbt**, trains models tracked in **MLflow**, and serves predictions through a **FastAPI** endpoint. **Evidently** monitors prediction data for drift, triggering alarms when the data diverges beyond a defined threshold. The entire system runs in **Docker**, ensuring reproducibility.
 
-This is the capstone project of the Data Science and Machine Learning Engineering boot camp I was trained in from November 2025 until June 2026. The projects goal is to predict flight delays for domestic flights in the US as a use case for a complete machine learning engineering setup. In the project millions of historical U.S. flight records are analyzed to predict arrival delays, both as a continuous value (minutes) and as a binary decision (yes/no). Our pipeline, orchestrated by Prefect, automatically transforms raw data into dbt models, trains machine learning models tracked in MLflow, and serves predictions through a FastAPI endpoint. Evidently analyses the data of prediction requests and creates an alarm when data drift above a defined threshold is detected. The entire system runs in Docker, ensuring it's reproducible. To demonstrate the capabilities of this project two demos are included:
- - A traffic simulator that continuously sends requests to demonstrate the FastAPI endpoint, while Prometheus and Grafana monitor the API's health and performance. 
- - A covid data drift demo where predictions are generated on a monthly basis stating in January 2020. It shows how prediction data deviates from training data with the onset of the covid pandemia. In June 2020 the data drift threshold is exceeded an the training of new models in initialized. If the new model performs better than the old one it is automatically registered as the default model for the prediction API.
- 
+Two demos are included to showcase the system's capabilities:
+- A **traffic simulator** that continuously sends prediction requests to the API, while **Prometheus** and **Grafana** monitor health and performance.
+- A **COVID data drift demo** that generates monthly predictions from January 2020 onward. It shows how prediction data deviates from training data during the pandemic. When the drift score exceeds the threshold, new models are automatically trained and promoted to champion if they outperform the previous models.
 
- ### Disclaimer
- The model performance to predict flight delays is not good at all. Data provided by the Bureau of Transportation Statistics are not sufficient for reliable delay predictions. The models only purpose is to demonstrate the surrounding frame work.  
 
-<br><br>
+## Table of Contents
+
+- [What Almo Does](#what-almo-does)
+- [How It Works (Pipeline Overview)](#how-it-works-pipeline-overview)
+- [Prerequisites](#prerequisites)
+- [Initialization](#initialization)
+- [Creation of dbt Models](#creation-of-dbt-models)
+- [How to Train a New Model](#how-to-train-a-new-model)
+- [How to Tune a New Model](#how-to-tune-a-new-model)
+- [How to Run the Traffic Simulator](#how-to-run-the-traffic-simulator)
+- [How to Run the COVID Data Drift Experiment](#how-to-run-the-covid-data-drift-experiment)
+- [Miscellaneous](#miscellaneous)
+- [Project Structure](#project-structure)
+- [Disclaimer](#disclaimer)
+
+
+
+## What Almo Does
+
+- **Ingests and models raw BTS flight data** – Raw CSV files are loaded into a PostgreSQL database, then transformed into clean, feature-rich tables using dbt.
+- **Trains models with configurable preprocessing** – Using configuration dictionaries, you define features, preprocessing strategies (one‑hot encoding, target encoding, cyclic features, log transforms), and model hyperparameters. Both regression and classification models are supported.
+- **Tracks experiments in MLflow** – Every training run logs parameters, metrics, artifacts, and dataset information to MLflow for full reproducibility.
+- **Serves predictions via FastAPI** – A FastAPI endpoint accepts flight features and returns delay predictions. Both regressor and classifier models are loaded from the MLflow registry.
+- **Detects data drift with Evidently** – The drift flow compares current prediction data against a pre‑COVID reference dataset. If the drift score exceeds a dynamic, monthly baseline, an alarm is triggered.
+- **Automatically retrains on drift** – When an alarm fires, the system automatically appends the drifted predictions to the training dataset, retrains both models, and promotes the new model if it outperforms the current champion.
+- **Monitors everything with Prometheus and Grafana** – Custom dashboards display drift scores, champion metrics, prediction rates, model ages, retraining status, and API performance in real time.
+
+
+
+## How It Works (Pipeline Overview)
+
+The entire process runs inside Docker and is orchestrated by Prefect. The main components are:
+
+1. **Data Ingestion & Transformation** (`bootstrap_db.py`, `dbt`)  
+   - Raw CSV files are downloaded via KaggleHub and loaded into `raw.flights`.  
+   - dbt models clean and transform the data into staging and training tables (`stg_flights`, various subset tables).
+
+2. **Model Training** (`train_flow.py`)  
+   - A configuration dictionary defines all aspects of the training: features, preprocessing, model type, and hyperparameters.  
+   - The pipeline builds a scikit‑learn `ColumnTransformer` for preprocessing and trains the model.  
+   - Metrics, artifacts, and dataset info are logged to MLflow.  
+   - If the new model outperforms the current champion, it is automatically registered and promoted.
+
+3. **Prediction API** (`api.py`)  
+   - A FastAPI app loads the champion models from MLflow at startup.  
+   - Incoming prediction requests are processed and logged to `api.predictions` along with input features and ground truth.  
+   - Prometheus metrics track prediction counts, durations, and model versions.
+
+4. **Drift Detection** (`drift_flow.py`)  
+   - Compares the feature distributions of recent predictions against a pre‑COVID reference (2018–2019).  
+   - Computes a drift score using Evidently's data drift preset.  
+   - Additional metrics (regression RMSE/MAE, classification F1/precision/recall) are calculated from the ground truth in `api.predictions`.  
+   - All metrics are posted to the API, where they are exposed to Prometheus.
+
+5. **Retraining on Drift**  
+   - When the drift score exceeds the monthly baseline, the system triggers a retraining:  
+     - Current predictions with ground truth are merged into the training table.  
+     - Both regressor and classifier are retrained on the expanded dataset.  
+     - If the new model is better, it becomes the champion and the API reloads its models.
+
+6. **Monitoring** (Prometheus + Grafana)  
+   - Prometheus scrapes the API's metrics endpoint every few seconds.  
+   - Grafana dashboards visualize drift scores, champion baselines, prediction performance, model ages, and retraining status.  
+   - Dynamic baselines and annotations are set during the COVID demo to provide context.
+
+
 
 ## Prerequisites
-- Docker & Docker Compose installed
-- Project cloned, `docker/.env` contains at least:
-  - `POSTGRES_USER`
-  - `POSTGRES_PASSWORD`
-- `Terminal with prompt at repo root`
 
-<br><br>
+<ul style="margin-top: -10px;">
+  <li><strong>Docker</strong> and <strong>Docker Compose</strong> installed</li>
+  <li>Project cloned and <code>docker/.env</code> containing at least:</li>
+  <ul>
+    <li><code>POSTGRES_USER</code></li>
+    <li><code>POSTGRES_PASSWORD</code></li>
+  </ul>
+  <li>Terminal open at the repository root</li>
+</ul>
+
+
 
 ## Initialization
-To make sure that there are no conflicts when creating our docker containers, delete all volumes defined in the compose.yml first. You can use this command: <br>
+
+Ensure no conflicting Docker volumes exist:
+
 ```bash
 docker compose -f docker/compose.yml down -v
 ```
 
-All services needed to run in a Docker-based local stack. To start the local services execute this command: <br>
+Start the entire local stack:
+
 ```bash
 docker compose -f docker/compose.yml up -d
 ```
 
-When the stack is running, the local endpoints are:
-- `FastAPI/Uvicorn`: `http://127.0.0.1:8000`
-- `Grafana`: `http://127.0.0.1:3000`
-- `MLflow`: `http://127.0.0.1:5001`
-- `Prefect`: `http://127.0.0.1:4200`
-- `Postgres`: `http://127.0.0.1:5432`
-- `Prometheus`: `http://127.0.0.1:9090`
+Once running, the following endpoints are available:
 
-### First Start only
-At the first start some bootstrapping is needed to dowload the data and setup Postgres SQL. After all services from the initialization have been established execute:<br>
+| Service    | URL                          |
+|------------|------------------------------|
+| FastAPI    | `http://127.0.0.1:8000`      |
+| Grafana    | `http://127.0.0.1:3000`      |
+| MLflow     | `http://127.0.0.1:5001`      |
+| Prefect    | `http://127.0.0.1:4200`      |
+| PostgreSQL | `http://127.0.0.1:5432`      |
+| Prometheus | `http://127.0.0.1:9090`      |
+
+### First Start Only
+
+Download the flight data and initialize PostgreSQL:
+
 ```bash
 docker compose -f docker/compose.yml exec api python docker/scripts/bootstrap_db.py
 ```
 
-Data will be downloaded to \repofolder\flight_data and Postgres will be initialised with those data. The process can take a long time, wait until you see the output: <br>
- ```bash
- "Import abgeschlossen. XXXX Zeilen in raw.flights eingefügt."
-```
-<br>
+Data will be downloaded to `flight_data/` and imported into `raw.flights`. This process can take a while. Wait for the output:
 
-To check if the initialisation is still running you can watch the size of the Postgres database.: <br>
-Linux/"Mac"
-```bash
-watch -n 5 "docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c \"SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;\""
 ```
-Windows
-Linux/"Mac"
+Import abgeschlossen. XXXX Zeilen in raw.flights eingefügt.
+```
+
+To monitor progress, check the database size:
+
 ```bash
+# Linux/macOS
+watch -n 5 "docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c \"SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;\""
+
+# Windows
 while ($true) { Clear-Host; docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;"; Start-Sleep -Seconds 5 }
 ```
 
+Verify the import:
 
-As long as the values are growing while no other process writes to Postgres the process is still running.
- 
-You can verify the table with:<br>
 ```bash
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*) FROM raw.flights;"
 ```
-<br><br>
 
-## Creation of dbt models
-Run dbt. Several data models will be build:<br>
+
+## Creation of dbt Models
+
+Build all dbt models:
+
 ```bash
 docker compose -f docker/compose.yml exec api dbt run --project-dir /app/dbt --profiles-dir /app/dbt
 ```
 
-<br>
-
-If you want to build only the model(s) that haven`t been built yet, run this command instead:
+To build only models that have changed since the last run:
 
 ```bash
 docker compose -f docker/compose.yml exec api dbt run --select state:modified+ --project-dir /app/dbt --profiles-dir /app/dbt
 ```
 
-<br>
+Verify a model:
 
-You can improve the performance by removing the first double dash (--) in `--AND random() < 0.1` in every file that is in `/dbt/models/training`. However, this will lead to slightly different data in the resulting dbt models. 
-
-<br>
-
-Verification of the dbt model `flights_subset.sql`:<br>
-```bash 
+```bash
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging.flights_subset;"
 ```
-<br><br>
+
 
 ## How to Train a New Model
 
-All training logic is driven by a configuration dictionary. You do not need to modify any Python code – just change the values in the config.
+All training is driven by configuration dictionaries in `flows/config.py`. No Python code changes are needed.
 
 ### 1. Prerequisites
 
-- All Docker containers are running (`docker compose -f docker/compose.yml up -d`)
-- The database contains the `dbt_staging.flights_subset` table (or another table of your choice)
-- MLflow is reachable at `http://localhost:5001`
+<ul style="margin-top: -10px;">
+  <li>All containers running (<code>docker compose -f docker/compose.yml up -d</code>)</li>
+  <li>A populated training table (e.g., <code>dbt_staging.flights_subset</code>)</li>
+  <li>MLflow reachable at <code>http://localhost:5001</code></li>
+</ul>
 
-### 2. Define your training configuration
+### 2. Define Your Training Configuration
 
-Open `config.py` from `repo/flows/` and add your a dictionary that will define your model. Here are the available keys:
+Add a new dictionary to `flows/config.py`. Available keys:
 
-| Key | Type | Description | Example / Possible values |
-|-----|------|-------------|---------------------------|
-| `run_name` | `str` | Name of the MLflow run | `"simple_rf_no_preprocessing"` |
-| `dataset_query` | `str` | SQL query to load training data | `"SELECT * FROM dbt_staging.flights_subset"` |
-| `target` | `str` | Target column to predict | `"arr_delay"` |
-| `numeric_cols` | `list[str]` | Numeric feature columns | `["crs_dep_time", "dep_delay_minutes", …]` |
-| `categorical_cols` | `list[str]` | Categorical feature columns | `["airline", "origin"]` |
-| `impute_num` | `str` | Imputation strategy for numeric columns | `"median"`, `"mean"`, `"most_frequent"` |
-| `impute_cat` | `str` | Imputation strategy for categorical columns | `"most_frequent"` |
-| `model_type` | `str` | Model class to use | `"RandomForestRegressor"` |
-| `model_params` | `dict` | Hyperparameters passed to the model | `{"n_estimators": 50, "max_depth": 10}` |
-| `register` | `bool` | Whether to register the model in MLflow | `true` / `false` |
-| `model_name` | `str` | Registered model name in MLflow | `"flight-delay-baseline"` |
-| `alias` | `str` | Alias to assign after registration | `"champion"`, `"staging"` |
-| `delay_threshold` | `int` | Threshold (minutes) for binary classification metrics | `15` |
-| `dataset_name` | `str` | Human‑readable dataset identifier shown in MLflow UI | `"flights_subset_2019-2020"` |
-| `dataset_source` | `str` | Source table or view in PostgreSQL | `"dbt_staging.flights_subset"` |
-| `dataset_start_date` | `str` | Start date of the underlying dbt sample | `"2019-01-01"` |
-| `dataset_end_date` | `str` | End date of the underlying dbt sample | `"2020-01-01"` |
-| `dataset_sample_size` | `int` | Number of rows in the dbt sample | `100000` |
-| `dataset_random_seed` | `float` | Random seed used for dbt sampling | `0.42` |
+| Key | Type | Description | Example |
+|-----|------|-------------|---------|
+| `run_name` | `str` | MLflow run name | `"simple_rf_no_preprocessing"` |
+| `dataset_query` | `str` | SQL query for training data | `"SELECT * FROM dbt_staging.flights_subset"` |
+| `target` | `str` | Target column | `"arr_delay"` |
+| `numeric_cols` | `list[str]` | Numeric features | `["crs_dep_time", "dep_delay_minutes", …]` |
+| `categorical_cols` | `list[str]` | Categorical features | `["airline", "origin"]` |
+| `impute_num` | `str` | Numeric imputation | `"median"`, `"mean"`, `"most_frequent"` |
+| `impute_cat` | `str` | Categorical imputation | `"most_frequent"` |
+| `model_type` | `str` | Model class | `"RandomForestRegressor"` |
+| `model_params` | `dict` | Hyperparameters | `{"n_estimators": 50, "max_depth": 10}` |
+| `register` | `bool` | Register in MLflow? | `true` / `false` |
+| `model_name` | `str` | Registered model name | `"flight-delay-baseline"` |
+| `alias` | `str` | Alias after registration | `"champion"`, `"staging"` |
+| `dataset_name` | `str` | Dataset identifier (logging) | `"flights_subset_2019-2020"` |
+| `dataset_source` | `str` | Source table or view | `"dbt_staging.flights_subset"` |
+| `dataset_start_date` | `str` | Start date (logging) | `"2019-01-01"` |
+| `dataset_end_date` | `str` | End date (logging) | `"2020-01-01"` |
+| `dataset_sample_size` | `int` | Rows in the sample (logging) | `100000` |
+| `dataset_random_seed` | `float` | Random seed (logging) | `0.42` |
 
-All keys except `run_name`, `dataset_query`, `target`, `numeric_cols`, `categorical_cols`, `model_type`, and `model_params` are optional and fall back to sensible defaults.
+Only `run_name`, `dataset_query`, `target`, `numeric_cols`, `categorical_cols`, `model_type`, and `model_params` are strictly required; the rest fall back to defaults.
 
-### 3. Run the training flow
-Assuming your configuration dictionary is called `NEW_MODEL` you can execute the whole training and logging pipeline with this command:
+### 3. Run the Training Flow
+
+Assuming your config is named `NEW_MODEL`:
+
 ```bash
 docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py NEW_MODEL
 ```
-Results of the training run can  be found in [MLFlow](http://127.0.0.1:5001). Metrics about the model usage can be found in [Grafana](http://127.0.0.1:4200).
+
+View results in [MLflow](http://127.0.0.1:5001) and [Grafana](http://127.0.0.1:3000).
 
 
-<br><br>
 ## How to Tune a New Model
-The modeling pipeline is also capable of hyper parameter tuning with Optuna. Everything that needs to be defined for an Optuna run can also be done via the `config.py`. The principle is very much the same, but instead of defining model parameters you need to define parameter ranges for the model and some new parameter to control Optunas behaviour. These are the additional parameters for Optuna:
 
+Hyperparameter tuning with Optuna is also supported. Define parameter ranges instead of fixed values:
 
-| Key | Type | Description | Example / Possible values |
-|-----|------|-------------|---------------------------|
-| `n_trials` | `int` | Number of hyperparameter trials | `5`, `30` |
-| `direction` | `str` | Optimization direction for the metric | `"minimize"`, `"maximize"` |
-| `param_ranges` | `dict` | Search spaces for hyperparameters (replaces `model_params`) | `{"n_estimators": {"type": "int", "low": 50, "high": 300}, "max_depth": {"type": "int", "low": 5, "high": 20}}` |
+| Key | Type | Description | Example |
+|-----|------|-------------|---------|
+| `n_trials` | `int` | Number of trials | `5`, `30` |
+| `direction` | `str` | Optimization direction | `"minimize"`, `"maximize"` |
+| `param_ranges` | `dict` | Search spaces (replaces `model_params`) | `{"n_estimators": {"type": "int", "low": 50, "high": 300}, …}` |
 
-The flow of parameter tuning with Optuna is defined in `flows/tune_flow.py`. Assuming your configuration dictionary is called `NEW_OPTUNA_MODEL` you can execute the whole training and logging pipeline with this command:
+Start the tuning:
+
 ```bash
 docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/tune_flow.py NEW_OPTUNA_MODEL
-``` 
-Results of the training run can  be found in [MLFlow](http://127.0.0.1:5001). Metrics about the model usage can be found in [Grafana](http://127.0.0.1:4200).
+```
 
-<br><br>
 
-## How to run the traffic simulator
-The traffic simulator is a script that is deployed in its own docker container. To start the traffic simulator just start the corresponding docker container.
+## How to Run the Traffic Simulator
+
+Start the simulator container:
+
 ```bash
 docker compose -f docker/compose.yml up -d simulator
 ```
-Stopping the container will stop the traffic:
+
+Stop it:
+
 ```bash
 docker compose -f docker/compose.yml down simulator
 ```
 
-<br>
+---
 
+## How to Run the COVID Data Drift Experiment
 
-## How to run the Covid data drift experiment
-Create data sets for pre-Covid flights and intra-Covid flights. Make `covid_data_drift_demo.-sh` in `Demo` executable and run the the script: 
+Make the demo script executable and run it:
+
 ```bash
+chmod +x Demo/covid_data_drift_demo.sh
 ./Demo/covid_data_drift_demo.sh
 ```
 
-<br><br>
+The demo will:
+- Empty the predictions table.
+- Reset Prometheus and Grafana for a clean start.
+- Inject monthly batches of 2020‑2022 flight data into the prediction API.
+- Run the drift flow after each batch.
+- When the drift score exceeds the threshold, automatically retrain both models and promote a new champion if improved.
+
+---
 
 ## Miscellaneous
-Here you find information that facilitates the understanding of how to utilize the modeling framework 
 
+### Recreation of the `api.predictions` Table
 
-### Recreation of the api.predictions table in PostgreSQL
-
-If you ever need to rebuild the api.predictions table in PostgreSQL, execute these commands: 
 ```bash
 docker compose -f docker/compose.yml stop simulator
-```
-
-```bash
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "DROP TABLE IF EXISTS api.predictions CASCADE;"```
-```
-
-```bash
+docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "DROP TABLE IF EXISTS api.predictions CASCADE;"
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "
 CREATE TABLE api.predictions (
     id SERIAL PRIMARY KEY,
@@ -216,68 +287,90 @@ CREATE TABLE api.predictions (
     prediction_class INTEGER,
     model_version_reg TEXT,
     model_version_class TEXT,
-    ground_truth DOUBLE PRECISION DEFAULT NULL
+    ground_truth JSONB DEFAULT NULL,
+    prediction_class_proba DOUBLE PRECISION DEFAULT NULL
 );
 "
 ```
 
-<br><br>
+### New dbt Models
 
+Create new `.sql` files in `dbt/models/training`. Update `dataset_query` in your config to point to the new table or view.
 
-### New dbt models
-If you want to create new data sets, define new dbt models in dbt/models/training.
+### Check the Predictions Database
 
-To define which data set is used during model training, change the `dataset_query` in the model defining dictionary in `flows/config.py`.
-
-All other fields in the data section of the config file just serve logging purposes in MLFlow
-
-<br>
-
-### Check of the prediction data base
-To check the number of rows in api.predictions execute:
 ```bash
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*) FROM api.predictions;"
-```
-
-To see the last 20 line in api-predictions. execute:
-```bash
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT * FROM api.predictions ORDER BY timestamp DESC LIMIT 20;"
 ```
 
-<br>
+### Bulk Insert Predictions (Without the API)
 
-### Filling the prediction data base fastly
-
-If you want to fill api.predictions directly without using the API, you can use the `batch_injector.py` script.
-
-It will use the intra-covid data set to write predictions directly into the data base. The command expects the start-date the end-date and the number of predictions you want to process.
-
-This is an example: 
 ```bash
 docker compose -f docker/compose.yml exec -e PYTHONPATH=/app api python docker/scripts/batch_inject.py 2020-04-01 2020-10-01 1000
 ```
 
-<br>
+### Quick Database Maintenance
 
-### Helpfull commands:
-
-Deletion of data in api.predictions with index reset
 ```bash
+# Clear predictions with index reset
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "TRUNCATE TABLE api.predictions RESTART IDENTITY;"
-```
 
-
-Deletion of data in api.predictions without index reset
-```bash
+# Clear predictions without index reset
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "TRUNCATE TABLE api.predictions;"
+
+# Query drift score directly
+curl -s "http://localhost:9090/api/v1/query?query=data_drift_score"
 ```
 
-Query size of api.predictions
-```bash
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*) FROM api.predictions;"  
+
+
+## Project Structure
+
+```
+Almo/
+├── docker/
+│   ├── compose.yml
+│   ├── dockerfile_fastAPI
+│   ├── .env
+│   ├── init-db.sql
+│   ├── monitoring/
+│   │   ├── prometheus.yml
+│   │   └── grafana/
+│   │       ├── dashboards/
+│   │       └── provisioning/
+│   ├── scripts/
+│   │   ├── bootstrap_db.py
+│   │   ├── batch_inject.py
+│   │   └── *.sh
+│   └── simulator/
+│       └── simulate_traffic.py
+├── flows/
+│   ├── config.py
+│   ├── train_flow.py
+│   ├── tune_flow.py
+│   └── drift_flow.py
+├── src/
+│   ├── api.py
+│   ├── data.py
+│   ├── preprocessing.py
+│   └── train.py
+├── dbt/
+│   ├── dbt_project.yml
+│   ├── profiles.yml
+│   └── models/
+│       ├── staging/
+│       └── training/
+├── Demo/
+│   ├── Pipeline_metaphor6.png
+│   └── covid_data_drift_demo.sh
+├── tests/
+├── requirements.txt
+└── README.md
 ```
 
-Query drift score directly from prometheus
-```bash
-curl -s "http://localhost:9090/api/v1/query?query=data_drift_score"    
-```
+---
+
+## Disclaimer
+
+**Model performance for predicting flight delays is limited.** The BTS dataset does not contain enough information for reliable delay predictions. The models serve solely to demonstrate the surrounding machine learning engineering framework and its capabilities. This project is an educational showcase, not a production‑ready flight delay solution.
