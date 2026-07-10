@@ -19,6 +19,10 @@ from sklearn.metrics import (
 from scipy.stats import skew
 import os
 from sqlalchemy import create_engine, text
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+np.seterr(divide='ignore', invalid='ignore')
+
 
 DB_URI = "postgresql://testuser:testuser@postgres:5432/fastapi_db"
 MLFLOW_URI = "http://mlflow:5000"

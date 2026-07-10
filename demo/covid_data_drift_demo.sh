@@ -9,73 +9,24 @@ docker compose -f docker/compose.yml rm -f simulator
 
 
 # --------------------------------------------------------------------------
-# Konfiguration (lädt .env aus Root und docker/)
+# LOAD GRAFANA API KEY
 # --------------------------------------------------------------------------
-for envfile in .env docker/.env; do
-    if [ -f "$envfile" ]; then
-        while IFS= read -r line || [ -n "$line" ]; do
-            [[ "$line" =~ ^# ]] || [[ -z "$line" ]] && continue
-            export "$line"
-        done < "$envfile"
-    fi
-done
-
-# Wenn kein GRAFANA_API_KEY in der .env definiert ist, nutzen wir den provisionierten Token
-if [ -z "$GRAFANA_API_KEY" ]; then
-    export GRAFANA_API_KEY="glsa_mleProjectDemoTokenSecretKey12345_AbCdEfG"
+# Token aus Datei lesen (MUSS existieren)
+TOKEN_FILE="./docker/monitoring/grafana/grafana_token.txt"
+if [ ! -f "$TOKEN_FILE" ]; then
+    echo "No Grafana token. Execute /docker/scripts/grafana_token_generation.sh from within docker."
+    exit 1
 fi
+GRAFANA_API_KEY=$(cat "$TOKEN_FILE")
+export GRAFANA_API_KEY
 
 GRAFANA_URL="http://localhost:3000"
-GRAFANA_API_TOKEN="glsa_mleProjectDemoTokenSecretKey12345_AbCdEfG"
-DASHBOARD_UID="flight-delay-3nd-try-backup"
+#GRAFANA_API_KEY="glsa_mleProjectDemoTokenSecretKey12345_AbCdEfG"
+DASHBOARD_UID="flight-delay"
 PANEL_ID="4"
 API_URL="http://api:8000"
 PROMETHEUS_URL="http://localhost:9090"
 HUGE_ROWS=1000000000
-
-
-# --------------------------------------------------------------------------
-# Erzwinge 2s-Refresh direkt in der provisionierten JSON-Datei
-# --------------------------------------------------------------------------
-echo "⚙️  Schreibe 2s-Refresh-Intervall hart in das provisionierte Dashboard..."
-
-# Findet die richtige JSON-Datei im Verzeichnis
-DASHBOARD_JSON_FILE=$(find ./monitoring/grafana/dashboards -name "*.json" | head -n 1)
-
-if [ -n "$DASHBOARD_JSON_FILE" ] && [ -f "$DASHBOARD_JSON_FILE" ]; then
-    # Ersetzt den standardmäßigen Refresh-Wert in der JSON-Datei durch "2s"
-    if [ "$(uname)" = "Darwin" ]; then
-        sed -i '' 's/"refresh": "[^"]*"/"refresh": "2s"/g' "$DASHBOARD_JSON_FILE"
-    else
-        sed -i 's/"refresh": "[^"]*"/"refresh": "2s"/g' "$DASHBOARD_JSON_FILE"
-    fi
-    echo "✅ Dashboard-Datei ($DASHBOARD_JSON_FILE) erfolgreich auf 2s modifiziert."
-else
-    echo "⚠️  Konnte Dashboard-JSON-Datei nicht finden. Überspringe automatische Modifikation."
-fi
-
-
-# --------------------------------------------------------------------------
-# Grafana Token Fallback & Live-Check
-# --------------------------------------------------------------------------
-if [ -z "$GRAFANA_API_KEY" ]; then
-    export GRAFANA_API_KEY="glsa_mleProjectDemoTokenSecretKey12345_AbCdEfG"
-fi
-
-echo "⏳ Prüfe Grafana Verbindung und API-Token..."
-# Kurzer Ping an die API mit dem Token
-RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GRAFANA_API_KEY" "$GRAFANA_URL/api/health")
-
-if [ "$RESPONSE_CODE" != "200" ]; then
-    echo "❌ Fehler: Grafana API-Token liefert HTTP-Status $RESPONSE_CODE"
-    echo "Bitte stelle sicher, dass die Datei ./monitoring/grafana/provisioning/serviceaccounts/sample.yaml existiert."
-    exit 1
-else
-    echo "✅ Grafana API-Token erfolgreich verifiziert (HTTP 200)."
-fi
-
-
-
 TABLE_INTRA_COVID="dbt_staging.intra_covid_100k"
 
 # --------------------------------------------------------------------------
@@ -118,11 +69,11 @@ wait_for_low_load() {
 
         local overloaded=false
         if (( $(echo "$load1 > $MAX_LOAD" | bc -l) )); then
-            echo "  ⚠️  CPU-Last zu hoch ($load1 > $MAX_LOAD) – warte 5s …"
+            echo "CPU-Last zu hoch ($load1 > $MAX_LOAD) – warte 5s …"
             overloaded=true
         fi
         if [ "$free_mem" -lt "$MIN_FREE_MB" ]; then
-            echo "  ⚠️  RAM knapp ($free_mem MB < $MIN_FREE_MB MB) – warte 5s …"
+            echo "RAM knapp ($free_mem MB < $MIN_FREE_MB MB) – warte 5s …"
             overloaded=true
         fi
 
@@ -161,47 +112,62 @@ run_batch() {
 
     echo ""
     echo "========================================="
-    echo "  $label (Monat $month)"
-    echo "  Baseline = $baseline"
+    echo "  $label"
+    echo "  Drift Score Baseline = $baseline"
     echo "========================================="
+    echo ""
+    echo "Preparing batch prediction..."
 
     # 1. Baseline setzen
-    timed_step "Setze Baseline" docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/baseline" \
-      -H "Content-Type: application/json" -d "{\"value\": $baseline}"
+    timed_step "Creating baseline..." docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/baseline" \
+      -H "Content-Type: application/json" -d "{\"value\": $baseline}" > /dev/null 2>&1
     sleep 2
 
     # 2. Grafana-Annotation
     if [ -n "$GRAFANA_API_KEY" ]; then
-    timed_step "Grafana-Annotation" docker compose -f docker/compose.yml exec api curl -s -X POST "http://grafana:3000/api/annotations" \
-      -H "Authorization: Bearer ${GRAFANA_API_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d "{
-            \"dashboardUID\": \"$DASHBOARD_UID\",
-            \"panelId\": $PANEL_ID,
-            \"time\": \$(date +%s)000,
-            \"tags\": [\"batch\"],
-            \"text\": \"$label\"
-          }"
-    sleep 2
+        # FAKTENBASIERTER FIX: Zeitstempel wird VORAB als reine Zahl auf dem Host berechnet
+        local current_timestamp=$(date +%s)000
 
+        timed_step "Creating Grafana annotations" docker compose -f docker/compose.yml exec api curl -s -X POST "http://grafana:3000/api/annotations" \
+          -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
+          -H "Content-Type: application/json" \
+          -d "{
+                \"dashboardUID\": \"$DASHBOARD_UID\",
+                \"panelId\": $PANEL_ID,
+                \"time\": $current_timestamp,
+                \"tags\": [\"batch\"],
+                \"text\": \"$label\"
+              }" > /dev/null 2>&1
+        sleep 2
     else
-        echo "  ⚠️  GRAFANA_API_KEY nicht gesetzt – Annotation übersprungen."
+        echo "GRAFANA_API_KEY nicht gesetzt – Annotation übersprungen."
         sleep 2
     fi
 
+    echo "...preparations finished"
+    echo ""   
+    echo "Batch prediction started..."
     # 3. Batch-Daten injizieren (ganzer Monat, deterministisch)
     wait_for_low_load "Batch-Inject Monat $month"
     timed_step "Batch-Inject ($HUGE_ROWS Zeilen)" docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e SEED="$SEED" api python docker/scripts/batch_inject.py \
-      "$start" "$end" "$HUGE_ROWS" "$TABLE_INTRA_COVID"
+      "$start" "$end" "$HUGE_ROWS" "$TABLE_INTRA_COVID" > /dev/null 2>&1
     sleep 2
 
-    # 4. Drift-Flow mit Monatsangabe und Seed
+    # 4. Drift-Flow mit Monatsangabe und Seed (Syntax-Fix)
     wait_for_low_load "Drift-Flow Monat $month"
-    timed_step "Drift-Flow (fair)" docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 \
-      -e DRIFT_MONTH="$month" -e DRIFT_SEED="$DRIFT_SEED" api python flows/drift_flow.py
-
+    timed_step "Drift-Flow" docker compose -f docker/compose.yml exec \
+      -e PYTHONPATH=/app \
+      -e PYTHONUNBUFFERED=1 \
+      -e DRIFT_MONTH="$month" \
+      -e DRIFT_SEED="$DRIFT_SEED" \
+      -e PREFECT_LOGGING_LEVEL=WARNING \
+      api python flows/drift_flow.py > /dev/null 2>&1
     # Wichtig: Prometheus braucht einen Moment, um die neuen Metriken zu scrapen
     sleep 3
+    echo "...predictions finished"
+
+    echo ""
+    echo "Drift score calculation starting..."
 
     # 5. Aktuellen Drift Score von Prometheus abrufen (Sicherer JSON-Parser via Heredoc)
     local raw_json
@@ -216,31 +182,40 @@ except Exception:
     print('')
 EOF
 )
+    echo "...drift score calculation finished"
+    echo ""
+
+
     
     if [ -n "$DRIFT_SCORE" ]; then
-        echo "  📊 Aktueller Drift Score: $DRIFT_SCORE"
-        
-        # 6. Alarm-Prüfung mit bc
+        echo "Drift Score: $DRIFT_SCORE"
         if (( $(echo "$DRIFT_SCORE > 0.5" | bc -l) )); then
-            echo "  🚨 Drift-Alarm! Starte Retraining …"
-            docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py DRIFT_RETRAIN_REG
-            docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py DRIFT_RETRAIN_CLASS
+            echo "Drift-Alarm! Retraining initiated..."
+            docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 \
+                -e PREFECT_LOGGING_LEVEL=ERROR \
+                api python flows/train_flow.py DRIFT_RETRAIN_REG > /dev/null 2>&1
+            docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 \
+                -e PREFECT_LOGGING_LEVEL=ERROR \
+                api python flows/train_flow.py DRIFT_RETRAIN_CLASS > /dev/null 2>&1
+            echo "... retrain finished"    
         fi
+
+
     else
-        echo "  ⚠️  Konnte Drift-Score nicht abrufen – kein Alarm möglich."
+        echo "No drift score!!!"
     fi
 
-    echo "  ✅ Monat $month abgeschlossen."
+    echo "Demo for month $month: finished"
 
     # ---------- REPARIERTE PAUSEN-PRÜFUNG AM ENDE DES MONATS ----------
     local PAUSE_KEY=""
     read -t 0.1 -n 1 PAUSE_KEY 2>/dev/null || true
     if [ "$PAUSE_KEY" = "p" ]; then
         echo ""
-        echo "  ⏸️  Pause angefordert. $label ist vollständig beendet."
-        echo "     👉 Drücke [ENTER], um mit dem nächsten Monat fortzufahren..."
+        echo "Stopping demo. $label finished"
+        echo "     Press [ENTER] to continue..."
         read -s
-        echo "  ▶️  Setze Demo fort..."
+        echo "Resuming Demo..."
         echo ""
     fi
     # ------------------------------------------------------------------
@@ -285,7 +260,7 @@ docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/dr
 # Alte Grafana-Annotationen entfernen (Sichere Radikallösung ohne Schleifen)
 echo "🧹 Bereinige Grafana-Annotationen …"
 docker compose -f docker/compose.yml exec api curl -s -X DELETE \
-  -H "Authorization: Bearer ${GRAFANA_API_TOKEN}" \
+  -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"tags": ["batch"]}' \
   "http://grafana:3000/api/annotations" > /dev/null

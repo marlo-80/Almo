@@ -7,3 +7,6 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     uid: prometheus_ds
+    jsonData:
+      timeInterval: "1s"
+      queryTimeout: "1s"
