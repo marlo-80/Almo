@@ -10,8 +10,8 @@ import numpy as np
 API_URL = os.environ.get("API_URL", "http://api:8000/predict")
 SLEEP_SEC = float(os.environ.get("SLEEP_SEC", 2.0))
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
-DB_URI = "postgresql://vikmar:vikmar@postgres:5432/fastapi_db"
-DB_SOURCE_TABLE = os.environ.get("DB_SOURCE_TABLE", "dbt_staging.flights_subset_intra_covid")
+DB_URI = "postgresql://testuser:testuser@postgres:5432/fastapi_db"
+DB_SOURCE_TABLE = os.environ.get("DB_SOURCE_TABLE", "dbt_staging.intra_covid_1M")
 
 # Zwei Modelle aus zentraler Konfiguration
 from flows.config import API_MODELS

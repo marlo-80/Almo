@@ -37,17 +37,10 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-      #- ./files/grafana:/etc/grafana
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s  
+      - ./files/grafana:/etc/grafana
     networks:
       - mle_network
-    restart: unless-stopped
-
+    restart: unless-stopped       
 
   # ---------------------------------------------------------------------------
   # MLflow – Tracking Server (Pfade bleiben unverändert)
@@ -170,7 +163,7 @@ services:
     environment:
       API_URL: http://api:8000/predict
       MLFLOW_TRACKING_URI: http://mlflow:5000
-      DB_SOURCE_TABLE: 'dbt_staging."intra_covid_1M"'
+      DB_SOURCE_TABLE: dbt_staging.flights_subset_intra_covid
       SLEEP_SEC: 2
       MODEL_NAME: ${MODEL_NAME:-}
       MODEL_ALIAS: ${MODEL_ALIAS:-}

@@ -20,7 +20,7 @@ API_URL="http://api:8000"
 PROMETHEUS_URL="http://localhost:9090"
 HUGE_ROWS=1000000000
 
-TABLE_INTRA_COVID="dbt_staging.intra_covid_test"
+TABLE_INTRA_COVID="dbt_staging.intra_covid_1M"
 
 # --------------------------------------------------------------------------
 # Determinismus: globaler Seed für batch_inject & drift_flow
@@ -205,9 +205,9 @@ docker compose -f docker/compose.yml rm -f prometheus
 docker compose -f docker/compose.yml up -d prometheus
 
 # --- NEU: Tabelle dbt_staging.retrain zurücksetzen ---
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "DROP TABLE IF EXISTS dbt_staging.retrain;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'DROP TABLE IF EXISTS dbt_staging."retrain";'
 
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "CREATE TABLE dbt_staging.retrain AS TABLE dbt_staging.pre_covid_test;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'CREATE TABLE dbt_staging.retrain AS TABLE dbt_staging."pre_covid_1M";'
 
 # Champion-Metriken aus MLflow laden und initial setzen
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/init-champion-metrics" \
@@ -245,7 +245,7 @@ else
 fi
 
 echo "Leere Tabelle api.predictions …"
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db \
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db \
   -c "TRUNCATE TABLE api.predictions RESTART IDENTITY;" > /dev/null
 
 # Vorhersage-Zähler auf 0 setzen, damit das Panel sofort korrekt anzeigt

@@ -23,7 +23,7 @@ engine = create_engine(DB_URI)
 # --- Lifespan: Modelle beim Start laden ------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Loading regressor and classifier from MLFlow registry."""
+    """Lädt Regressor und Classifier aus der MLflow‑Registry."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = MlflowClient()
 
@@ -36,21 +36,16 @@ async def lifespan(app: FastAPI):
         model_uri = f"models:/{model_name}@{alias}"
         try:
             if task == "classification":
-                pipeline = mlflow.sklearn.load_model(model_uri)
-                mv = client.get_model_version_by_alias(model_name, alias)
-                version_str = f"{model_name}_v{mv.version}@{alias}"
-                setattr(app.state, f"{task}_pipeline", pipeline)
-                setattr(app.state, f"{task}_version", version_str)
-                print(f"Model '{task}' loaded: {version_str}")
+                pipeline = mlflow.sklearn.load_model(model_uri)   # sklearn-Pipeline mit predict_proba
             else:
                 pipeline = mlflow.pyfunc.load_model(model_uri)
             mv = client.get_model_version_by_alias(model_name, alias)
             version_str = f"{model_name}_v{mv.version}@{alias}"
             setattr(app.state, f"{task}_pipeline", pipeline)
             setattr(app.state, f"{task}_version", version_str)
-            print(f"Model '{task}' loaded: {version_str}")
+            print(f"Modell '{task}' geladen: {version_str}")
         except Exception as e:
-            print(f"WARNING: Model '{task}' not loaded – {e}")
+            print(f"WARNUNG: Modell '{task}' nicht geladen – {e}")
             setattr(app.state, f"{task}_pipeline", None)
             setattr(app.state, f"{task}_version", "not_loaded")
 
@@ -82,17 +77,8 @@ async def lifespan(app: FastAPI):
 
     # ----- Zeilenanzahlen initial setzen -----
     with engine.connect() as conn:
-        try:
-            TRAIN_ROWS.set(conn.execute(text("SELECT COUNT(*) FROM dbt_staging.retrain")).scalar())
-        except Exception:
-            TRAIN_ROWS.set(0)
-            print("WARNING: Table dbt_staging.retrain does not exist.")
-        try:
-            PREDICTION_ROWS.set(conn.execute(text("SELECT COUNT(*) FROM api.predictions")).scalar())
-        except Exception as e:
-            PREDICTION_ROWS.set(0)
-            print(f"WARNING: Could not read prediction rows: {e}")
-
+        TRAIN_ROWS.set(conn.execute(text("SELECT COUNT(*) FROM dbt_staging.retrain")).scalar())
+        PREDICTION_ROWS.set(conn.execute(text("SELECT COUNT(*) FROM api.predictions")).scalar())
 
     # ----- Modell‑Alter berechnen (beide Modelle) -----
     from datetime import datetime, timezone

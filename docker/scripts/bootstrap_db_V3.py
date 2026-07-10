@@ -69,11 +69,11 @@ def bootstrap():
         len_all += len(df)
         print(f"Writing  Data Frame to PostgreSQL.")
         if first:
-            df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=50000)
+            df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, method="multi", chunksize=10000)
             print(f"{len_all} Rows have been written to PostgreSQL.")
             first = False
         else:
-            df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=50000)
+            df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, method="multi", chunksize=10000)
             print(f"{len_all} Rows have been written to PostgreSQL.")
 
 

@@ -1,7 +1,5 @@
-# ./docker/src/data.py
 import os
 import re
-import sys
 import kagglehub
 import pandas as pd
 import shutil
@@ -54,10 +52,9 @@ def load_from_kaggle(kaggle_path: str, output_dir: str) -> str:
                     print(f"Copied: {file}")
 
             print("")
-            print("Cleaning up download folder...")
+            print("Cleaning up cache...")
             shutil.rmtree(cache_dir, ignore_errors=True)
-            shutil.rmtree(downloaded_path, ignore_errors=True)
-            print("...downloads deleted.")
+            print("...cache deleted.")
             print("")
 
             return output_dir        
@@ -115,10 +112,7 @@ def load_from_local(path = f"./{DEFAULT_PATH}/"):
                         "ArrDelay", "ArrDelayMinutes", "ArrDel15", "ArrivalDelayGroups", "DepDelay", "DepDelayMinutes",
                         # Filtering (needed for WHERE clause)
                         "Cancelled", "Diverted"
-                    ],
-                    engine="pyarrow",
-                    dtype_backend="pyarrow"                   
-                    )       
+                    ])       
             
             yield df        
             #df = pd.concat([df, df_], ignore_index=True)        
@@ -131,7 +125,7 @@ def load_from_local(path = f"./{DEFAULT_PATH}/"):
 
 
 def load_subset_table(query: str) -> pd.DataFrame:
-    """Lädt eine beliebige Tabelle/View aus PostgreSQL."""
+    """Loads tables/views from PostgreSQL."""
     engine = create_engine(DB_URI)
     df = pd.read_sql(query, engine)
     return df
@@ -140,7 +134,7 @@ def load_subset_table(query: str) -> pd.DataFrame:
 
 
 def convert_integers_to_float(df: pd.DataFrame, numeric_cols: list[str]) -> pd.DataFrame:
-    """Konvertiert alle als int64 gespeicherten numerischen Spalten nach float64."""
+    """Transforms all values from int64 to float64."""
     df = df.copy()
     for col in numeric_cols:
         if col in df.columns and df[col].dtype == 'int64':

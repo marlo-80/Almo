@@ -1,4 +1,3 @@
-# ./docker/scripts/bootstrap_db.py
 import sys, os
 # Das Projekt-Root ist das übergeordnete Verzeichnis des Skripts (docker/scripts/ → repo/)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -9,7 +8,6 @@ if project_root not in sys.path:
 # docker/scripts/bootstrap_db.py
 from sqlalchemy import create_engine, text
 import os
-import glob
 
 DB_USER = os.environ.get("POSTGRES_USER", "testuser")
 DB_PASS = os.environ.get("POSTGRES_PASSWORD", "testuser")
@@ -54,14 +52,20 @@ def bootstrap():
         with engine.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM raw.flights")).scalar()
             if count > 0:
-                print(f"Tabelle raw.flights enthält bereits {count} Zeilen – Import übersprungen.")
+                print(f"Import skipped! There are already {count} rows in raw.flights ")
                 return
 
     # Falls nicht, Daten laden und importieren
-    print("Importiere Daten aus CSV-Dateien ...")
+    print("Import from CSV...")
     from src.data import load_from_local
     from src.data import load_from_kaggle
     generator = load_from_local()
+
+
+    with engine.connect() as conn:
+        conn.execute(text("SET synchronous_commit = OFF;"))
+        conn.execute(text("SET maintenance_work_mem = '256MB';"))
+        conn.commit()   
 
     len_all = 0
     first = True
@@ -69,28 +73,24 @@ def bootstrap():
         len_all += len(df)
         print(f"Writing  Data Frame to PostgreSQL.")
         if first:
-            df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=50000)
+            df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=10000, method="multi")
             print(f"{len_all} Rows have been written to PostgreSQL.")
             first = False
         else:
-            df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=50000)
+            df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=10000, method="multi")
             print(f"{len_all} Rows have been written to PostgreSQL.")
 
+    with engine.connect() as conn:
+        conn.execute(text("SET synchronous_commit = ON;"))
+        conn.commit()        
 
-    if len_all > 0:
-        with engine.connect() as conn:
-            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_flight_date ON raw.flights ("FlightDate");'))
-            conn.commit()
-    else:
-        print("No data imported – skipping index creation.")
+    if len_all == 0:
+        print("ERROR: No data imported. CSV files not found or empty.")
+        sys.exit(1)
 
-    csv_files = glob.glob(os.path.join("./flight_data", "*.csv"))
-    for f in csv_files:
-        try:
-            os.remove(f)
-            print(f"Deleted: {f}")
-        except Exception as e:
-            print(f"Could not delete {f}: {e}")      
+    with engine.connect() as conn:
+        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_flight_date ON raw.flights ("FlightDate");'))
+        conn.commit()
         
     print(f"Import finished. {len_all} rows have been added to raw.flights.")
 

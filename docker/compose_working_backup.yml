@@ -38,16 +38,9 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
       #- ./files/grafana:/etc/grafana
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s  
     networks:
       - mle_network
-    restart: unless-stopped
-
+    restart: unless-stopped       
 
   # ---------------------------------------------------------------------------
   # MLflow – Tracking Server (Pfade bleiben unverändert)

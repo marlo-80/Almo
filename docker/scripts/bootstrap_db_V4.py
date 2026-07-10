@@ -10,12 +10,15 @@ if project_root not in sys.path:
 from sqlalchemy import create_engine, text
 import os
 import glob
+import io
+import math
 
 DB_USER = os.environ.get("POSTGRES_USER", "testuser")
 DB_PASS = os.environ.get("POSTGRES_PASSWORD", "testuser")
 DB_HOST = "postgres"
 DB_PORT = "5432"
 DB_NAME = "fastapi_db"
+
 
 def bootstrap():
     engine = create_engine(f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
@@ -58,41 +61,21 @@ def bootstrap():
                 return
 
     # Falls nicht, Daten laden und importieren
-    print("Importiere Daten aus CSV-Dateien ...")
+    print("Prüfe lokale CSV-Dateien und lade ggf. von Kaggle...")
     from src.data import load_from_local
-    from src.data import load_from_kaggle
     generator = load_from_local()
 
-    len_all = 0
-    first = True
-    for df in generator:
-        len_all += len(df)
-        print(f"Writing  Data Frame to PostgreSQL.")
-        if first:
-            df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=50000)
-            print(f"{len_all} Rows have been written to PostgreSQL.")
-            first = False
-        else:
-            df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=50000)
-            print(f"{len_all} Rows have been written to PostgreSQL.")
-
-
-    if len_all > 0:
+    # Holt das erste Element, um die Struktur via Pandas zu erzeugen
+    try:
+        first_df = next(generator)
         with engine.connect() as conn:
-            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_flight_date ON raw.flights ("FlightDate");'))
+            first_df.head(0).to_sql("flights", conn, schema="raw", if_exists="replace", index=False)
             conn.commit()
-    else:
-        print("No data imported – skipping index creation.")
+        print("Tabellenstruktur 'raw.flights' wurde erfolgreich vorbereitet.")
+    except StopIteration:
+        print("Keine CSV-Dateien zum Importieren gefunden.")
 
-    csv_files = glob.glob(os.path.join("./flight_data", "*.csv"))
-    for f in csv_files:
-        try:
-            os.remove(f)
-            print(f"Deleted: {f}")
-        except Exception as e:
-            print(f"Could not delete {f}: {e}")      
-        
-    print(f"Import finished. {len_all} rows have been added to raw.flights.")
+    print("Tabellenstruktur erfolgreich vorbereitet. Daten-Download abgeschlossen.")
 
 if __name__ == "__main__":
     bootstrap()

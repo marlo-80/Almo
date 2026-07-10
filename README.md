@@ -79,59 +79,21 @@ The entire process runs inside Docker and is orchestrated by Prefect. The main c
 
 
 ## Prerequisites
-
-<ul style="margin-top: -10px;">
-  <li><strong>Docker</strong> and <strong>Docker Compose</strong> installed</li>
-  <li>Project cloned and <code>docker/.env</code> containing at least:</li>
-  <ul>
-    <li><code>POSTGRES_USER</code></li>
-    <li><code>POSTGRES_PASSWORD</code></li>
-  </ul>
-  <li>Terminal open at the repository root</li>
-</ul>
+   - Docker and Docker Compose installed
+   - Windows Subsystem for Linux 2 installed
+   - Terminal open in repository root
 
 
 
 ## Initialization
 
-Ensure no conflicting Docker volumes exist:
-
+Make the `setup.sh` script executable and run it from the repository root
 ```bash
-docker compose -f docker/compose.yml down -v
+./setup.sh
 ```
 
-Start the entire local stack:
-
-```bash
-docker compose -f docker/compose.yml up -d
-```
-
-Once running, the following endpoints are available:
-
-| Service    | URL                          |
-|------------|------------------------------|
-| FastAPI    | `http://127.0.0.1:8000`      |
-| Grafana    | `http://127.0.0.1:3000`      |
-| MLflow     | `http://127.0.0.1:5001`      |
-| Prefect    | `http://127.0.0.1:4200`      |
-| PostgreSQL | `http://127.0.0.1:5432`      |
-| Prometheus | `http://127.0.0.1:9090`      |
-
-### First Start Only
-
-Download the flight data and initialize PostgreSQL:
-
-```bash
-docker compose -f docker/compose.yml exec api python docker/scripts/bootstrap_db.py
-```
-
-Data will be downloaded to `flight_data/` and imported into `raw.flights`. This process can take a while. Wait for the output:
-
-```
-Import abgeschlossen. XXXX Zeilen in raw.flights eingefügt.
-```
-
-To monitor progress, check the database size:
+Data will be downloaded to `flight_data/` and imported into `raw.flights`. This process can take a while.
+To monitor progress, observe the database size:
 
 ```bash
 # Linux/macOS
@@ -146,6 +108,21 @@ Verify the import:
 ```bash
 docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*) FROM raw.flights;"
 ```
+
+
+Once running, the following endpoints are available:
+
+| Service    | URL                          |
+|------------|------------------------------|
+| FastAPI    | [http://127.0.0.1:8000](http://127.0.0.1:8000/health)      |
+| Grafana    | [http://127.0.0.1:3000](http://127.0.0.1:3000)      |
+| MLflow     | [http://127.0.0.1:5001](http://127.0.0.1:5001)      |
+| Prefect    | [http://127.0.0.1:4200](http://127.0.0.1:4200)       |
+| PostgreSQL | [http://127.0.0.1:5432](http://127.0.0.1:5432)      |
+| Prometheus | [http://127.0.0.1:9090](http://127.0.0.1:9090)      |
+
+
+
 
 
 ## Creation of dbt Models

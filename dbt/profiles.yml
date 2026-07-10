@@ -4,8 +4,8 @@ flights_dbt:
     dev:
       type: postgres
       host: postgres             
-      user: vikmar
-      password: vikmar
+      user: testuser
+      password: testuser
       port: 5432
       dbname: fastapi_db
       schema: dbt_staging         # alle dbt‑Modelle landen in diesem Schema

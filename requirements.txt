@@ -4,7 +4,7 @@ dbt-postgres==1.8.0
 evidently==0.4.25
 fastapi==0.136.0
 httpx==0.28.1
-kagglehub==0.3.10
+kagglehub==0.4.3
 mlflow==3.11.1
 optuna==4.1.0
 optuna-integration[mlflow]==4.1.0   # MLflow-Callback

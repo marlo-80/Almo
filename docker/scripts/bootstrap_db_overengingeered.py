@@ -1,5 +1,6 @@
 # ./docker/scripts/bootstrap_db.py
 import sys, os
+import io
 # Das Projekt-Root ist das übergeordnete Verzeichnis des Skripts (docker/scripts/ → repo/)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if project_root not in sys.path:
@@ -63,18 +64,35 @@ def bootstrap():
     from src.data import load_from_kaggle
     generator = load_from_local()
 
+    # Ersetze die alte Schleife in bootstrap_db.py durch:
     len_all = 0
     first = True
-    for df in generator:
-        len_all += len(df)
-        print(f"Writing  Data Frame to PostgreSQL.")
-        if first:
-            df.to_sql("flights", engine, schema="raw", if_exists="replace", index=False, chunksize=50000)
-            print(f"{len_all} Rows have been written to PostgreSQL.")
-            first = False
-        else:
-            df.to_sql("flights", engine, schema="raw", if_exists="append", index=False, chunksize=50000)
-            print(f"{len_all} Rows have been written to PostgreSQL.")
+    
+    # Rohe DBAPI-Verbindung von SQLAlchemy abgreifen, um SQLAlchemy zu umgehen
+    with engine.connect() as conn:
+        dbapi_conn = conn.connection.dbapi_connection if hasattr(conn.connection, 'dbapi_connection') else conn.connection
+        
+        for df in generator:
+            len_all += len(df)
+            print(f"Writing Data Frame chunk to PostgreSQL...")
+            
+            if first:
+                # Nur beim ersten Mal darf Pandas die Tabelle via SQLAlchemy erstellen
+                df.head(0).to_sql("flights", engine, schema="raw", if_exists="replace", index=False)
+                first = False
+            
+            # Ab hier: Direkter, nativer Treiberzugriff ohne SQLAlchemy-Metadaten-Overhead
+            with dbapi_conn.cursor() as cur:
+                # DataFrame superschnell im RAM als CSV-String formatieren
+                s_buf = io.StringIO()
+                df.to_csv(s_buf, header=False, index=False, sep='\t', na_rep='\\N')
+                s_buf.seek(0)
+                
+                # Nutzt den echten, ungedrosselten C-Befehl des Treibers
+                cur.copy_from(s_buf, "raw.flights", sep='\t', null='\\N', columns=[f'"{c}"' for c in df.columns])
+                
+        dbapi_conn.commit()  # Erst ganz am Ende einmal alles auf die NVMe schreiben
+
 
 
     if len_all > 0:

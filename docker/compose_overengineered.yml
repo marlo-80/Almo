@@ -17,6 +17,7 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ../:/app
+      - flight_data_shared:/app/flight_data
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,17 +38,10 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-      #- ./files/grafana:/etc/grafana
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s  
+      - ./files/grafana:/etc/grafana
     networks:
       - mle_network
-    restart: unless-stopped
-
+    restart: unless-stopped       
 
   # ---------------------------------------------------------------------------
   # MLflow – Tracking Server (Pfade bleiben unverändert)
@@ -141,6 +135,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - flight_data_shared:/flight_data_shared
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-testuser} -d postgres"]
@@ -170,7 +165,7 @@ services:
     environment:
       API_URL: http://api:8000/predict
       MLFLOW_TRACKING_URI: http://mlflow:5000
-      DB_SOURCE_TABLE: 'dbt_staging."intra_covid_1M"'
+      DB_SOURCE_TABLE: dbt_staging.flights_subset_intra_covid
       SLEEP_SEC: 2
       MODEL_NAME: ${MODEL_NAME:-}
       MODEL_ALIAS: ${MODEL_ALIAS:-}
@@ -190,6 +185,7 @@ services:
       - mle_network
     volumes:
       - ../:/app   # damit das Skript in docker/scripts/ gefunden wird
+      - flight_data_shared:/app/flight_data
     command: python docker/scripts/bootstrap_db.py
     restart: "no"
     environment:
@@ -215,6 +211,7 @@ networks:
 volumes:
   postgres_data:
   grafana_data:
+  flight_data_shared:
   
 
 
