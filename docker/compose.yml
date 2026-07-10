@@ -183,7 +183,9 @@ services:
       SLEEP_SEC: 2
       MODEL_NAME: ${MODEL_NAME:-}
       MODEL_ALIAS: ${MODEL_ALIAS:-}
-    restart: unless-stopped          # ← statt „no“ oder falls bisher ganz fehlend
+    profiles:
+      - manual
+    restart: unless-stopped        
 
 
   # ---------------------------------------------------------------------------
