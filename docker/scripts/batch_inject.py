@@ -15,13 +15,13 @@ if len(sys.argv) < 4 or len(sys.argv) > 5:
 start_date   = sys.argv[1]
 end_date     = sys.argv[2]
 approx_rows  = int(sys.argv[3])
-SOURCE_TABLE = sys.argv[4] if len(sys.argv) == 5 else "dbt_staging.flights_subset_intra_covid"
+SOURCE_TABLE = sys.argv[4] if len(sys.argv) == 5 else "dbt_staging.intra_covid_100k"
 
 print(f"Lade exakt {approx_rows} Zeilen aus {SOURCE_TABLE} (Zeitraum {start_date} – {end_date}) ...")
 
 # --- Konfiguration ---------------------------------------------------------
 MLFLOW_URI = "http://mlflow:5000"
-DB_URI = "postgresql://vikmar:vikmar@postgres:5432/fastapi_db"
+DB_URI = "postgresql://testuser:testuser@postgres:5432/fastapi_db"
 
 # --- Modelle laden ---------------------------------------------------------
 mlflow.set_tracking_uri(MLFLOW_URI)

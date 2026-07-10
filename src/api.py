@@ -417,7 +417,7 @@ async def trigger_retrain():
             {"tbl": target_table}
         ).scalar()
         if not exists:
-            conn.execute(sa_text(f"CREATE TABLE {full_table} (LIKE dbt_staging.pre_covid_test)"))
+            conn.execute(sa_text(f"CREATE TABLE {full_table} (LIKE dbt_staging.pre_covid_100k)"))
             conn.commit()
 
         # 2. Spaltenstruktur ermitteln

@@ -90,13 +90,13 @@ REG = {
     "model_params": {"n_estimators": 20, "max_depth": 5, "random_state": 42},
 
     # Daten (nur Logging)
-    "dataset_query": "SELECT * FROM dbt_staging.\"pre_covid_1M\"",
-    "dataset_name": "pre_covid_1M",
+    "dataset_query": "SELECT * FROM dbt_staging.pre_covid_100K",
+    "dataset_name": "pre_covid_100K",
     "dataset_start_date": "2018-01-01",
     "dataset_end_date": "2020-01-01",
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
-    "dataset_source": "dbt_staging.pre_covid_1M",
+    "dataset_source": "dbt_staging.pre_covid_100K",
 
     # Registrierung & Promotion
     "register": False,
@@ -147,13 +147,13 @@ CLASS = {
     "model_params": {"n_estimators": 20, "max_depth": 2, "class_weight": "balanced", "random_state": 42},
 
     # Daten (nur Logging)
-    "dataset_query": "SELECT * FROM dbt_staging.\"pre_covid_1M\"",
-    "dataset_name": "pre_covid_1m",
+    "dataset_query": "SELECT * FROM dbt_staging.pre_covid_100K",
+    "dataset_name": "pre_covid_100k",
     "dataset_start_date": "2018-01-01",
     "dataset_end_date": "2020-01-01",
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
-    "dataset_source": "dbt_staging.pre_covid_1M",
+    "dataset_source": "dbt_staging.pre_covid_100K",
 
     # Registrierung & Promotion
     "register": False,
@@ -213,13 +213,13 @@ OPTUNA_REG = {
     "fixed_model_params": {"random_state": 42},
 
     # Daten (nur Logging)
-    "dataset_query": "SELECT * FROM dbt_staging.\"pre_covid_1M\"",
-    "dataset_name": "pre_covid_1m",
+    "dataset_query": "SELECT * FROM dbt_staging.pre_covid_100K",
+    "dataset_name": "pre_covid_100k",
     "dataset_start_date": "2018-01-01",
     "dataset_end_date": "2020-01-01",
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
-    "dataset_source": "dbt_staging.pre_covid_1M",
+    "dataset_source": "dbt_staging.pre_covid_100K",
 
     # Registrierung & Promotion
     "register": False,
@@ -279,13 +279,13 @@ OPTUNA_CLASS = {
     "fixed_model_params": {"class_weight": "balanced", "random_state": 42},
 
     # Daten (nur Logging)
-    "dataset_query": "SELECT * FROM dbt_staging.\"pre_covid_1M\"",
-    "dataset_name": "pre_covid_1m",
+    "dataset_query": "SELECT * FROM dbt_staging.pre_covid_100K",
+    "dataset_name": "pre_covid_100k",
     "dataset_start_date": "2018-01-01",
     "dataset_end_date": "2020-01-01",
     "dataset_sample_size": 100000,
     "dataset_random_seed": 0.42,
-    "dataset_source": "dbt_staging.pre_covid_1M",
+    "dataset_source": "dbt_staging.pre_covid_100K",
 
     # Registrierung & Promotion
     "register": False,

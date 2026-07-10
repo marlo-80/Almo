@@ -20,17 +20,17 @@ from scipy.stats import skew
 import os
 from sqlalchemy import create_engine, text
 
-DB_URI = "postgresql://vikmar:vikmar@postgres:5432/fastapi_db"
+DB_URI = "postgresql://testuser:testuser@postgres:5432/fastapi_db"
 MLFLOW_URI = "http://mlflow:5000"
 
 
 @task
 def load_reference_data(month: int):
-    """Lädt Referenzdaten nur für den angegebenen Monat (1‑12) aus pre_covid_test."""
+    """Lädt Referenzdaten nur für den angegebenen Monat (1‑12) aus pre_covid_100k."""
     engine = create_engine(DB_URI)
     query = f"""
         SELECT *
-        FROM dbt_staging."pre_covid_test"
+        FROM dbt_staging.pre_covid_100k
         WHERE month = {month}
     """
     df = pd.read_sql(query, engine)

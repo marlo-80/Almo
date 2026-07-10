@@ -33,9 +33,16 @@ services:
       - prometheus
     ports:
       - "3000:3000"
+    environment:
+      - GF_PROVISIONING_ALLOW_OVERRIDE=true
+      # WICHTIG: Doppelter Unterstrich zwischen DASHBOARDS und MIN_REFRESH_INTERVAL
+      - GF_DASHBOARDS__MIN_REFRESH_INTERVAL=1s
+      - GF_LIVE_ALLOWED_ORIGINS=*
+ 
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - grafana_data:/var/lib/grafana
       #- ./files/grafana:/etc/grafana
     healthcheck:
@@ -108,6 +115,8 @@ services:
     image: prom/prometheus:v3.7.3
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+  #global:
+   # scrape_interval: 1s  
     depends_on:
       - api
     ports:

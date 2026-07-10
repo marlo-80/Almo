@@ -2720,7 +2720,7 @@
       "type": "gauge"
     }
   ],
-  "refresh": "5s",
+  "refresh": "1s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": [],
@@ -2732,21 +2732,25 @@
     "to": "now"
   },
   "timepicker": {
+    "collapse": false,
+    "enable": true,
+    "notice": false,
+    "nowDelay": "",
     "refresh_intervals": [
+      "1s",
+      "2s",
       "5s",
       "10s",
       "30s",
       "1m",
-      "5m",
-      "15m",
-      "30m",
-      "1h",
-      "2h"
-    ]
-  },
+      "5m"
+    ],
+    "status": "Stable"
+  }
+,
   "timezone": "browser",
-  "title": "Flight Delay API 3nd Try",
-  "uid": "flight-delay-3nd-try",
+  "title": "Flight Delay API 3nd Try backup",
+  "uid": "flight-delay-3nd-try-backup",
   "version": 2,
   "weekStart": ""
 }

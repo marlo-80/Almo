@@ -1,6 +1,13 @@
 #!/bin/bash
 #set -e
 
+
+echo "Stoppe laufenden Traffic-Simulator …"
+docker compose -f docker/compose.yml stop simulator
+docker compose -f docker/compose.yml rm -f simulator
+
+
+
 # --------------------------------------------------------------------------
 # Konfiguration (lädt .env aus Root und docker/)
 # --------------------------------------------------------------------------
@@ -13,14 +20,63 @@ for envfile in .env docker/.env; do
     fi
 done
 
+# Wenn kein GRAFANA_API_KEY in der .env definiert ist, nutzen wir den provisionierten Token
+if [ -z "$GRAFANA_API_KEY" ]; then
+    export GRAFANA_API_KEY="glsa_mleProjectDemoTokenSecretKey12345_AbCdEfG"
+fi
+
 GRAFANA_URL="http://localhost:3000"
-DASHBOARD_UID="flight-delay-xxl"
+GRAFANA_API_TOKEN="glsa_mleProjectDemoTokenSecretKey12345_AbCdEfG"
+DASHBOARD_UID="flight-delay-3nd-try-backup"
 PANEL_ID="4"
 API_URL="http://api:8000"
 PROMETHEUS_URL="http://localhost:9090"
 HUGE_ROWS=1000000000
 
-TABLE_INTRA_COVID="dbt_staging.intra_covid_1M"
+
+# --------------------------------------------------------------------------
+# Erzwinge 2s-Refresh direkt in der provisionierten JSON-Datei
+# --------------------------------------------------------------------------
+echo "⚙️  Schreibe 2s-Refresh-Intervall hart in das provisionierte Dashboard..."
+
+# Findet die richtige JSON-Datei im Verzeichnis
+DASHBOARD_JSON_FILE=$(find ./monitoring/grafana/dashboards -name "*.json" | head -n 1)
+
+if [ -n "$DASHBOARD_JSON_FILE" ] && [ -f "$DASHBOARD_JSON_FILE" ]; then
+    # Ersetzt den standardmäßigen Refresh-Wert in der JSON-Datei durch "2s"
+    if [ "$(uname)" = "Darwin" ]; then
+        sed -i '' 's/"refresh": "[^"]*"/"refresh": "2s"/g' "$DASHBOARD_JSON_FILE"
+    else
+        sed -i 's/"refresh": "[^"]*"/"refresh": "2s"/g' "$DASHBOARD_JSON_FILE"
+    fi
+    echo "✅ Dashboard-Datei ($DASHBOARD_JSON_FILE) erfolgreich auf 2s modifiziert."
+else
+    echo "⚠️  Konnte Dashboard-JSON-Datei nicht finden. Überspringe automatische Modifikation."
+fi
+
+
+# --------------------------------------------------------------------------
+# Grafana Token Fallback & Live-Check
+# --------------------------------------------------------------------------
+if [ -z "$GRAFANA_API_KEY" ]; then
+    export GRAFANA_API_KEY="glsa_mleProjectDemoTokenSecretKey12345_AbCdEfG"
+fi
+
+echo "⏳ Prüfe Grafana Verbindung und API-Token..."
+# Kurzer Ping an die API mit dem Token
+RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GRAFANA_API_KEY" "$GRAFANA_URL/api/health")
+
+if [ "$RESPONSE_CODE" != "200" ]; then
+    echo "❌ Fehler: Grafana API-Token liefert HTTP-Status $RESPONSE_CODE"
+    echo "Bitte stelle sicher, dass die Datei ./monitoring/grafana/provisioning/serviceaccounts/sample.yaml existiert."
+    exit 1
+else
+    echo "✅ Grafana API-Token erfolgreich verifiziert (HTTP 200)."
+fi
+
+
+
+TABLE_INTRA_COVID="dbt_staging.intra_covid_100k"
 
 # --------------------------------------------------------------------------
 # Determinismus: globaler Seed für batch_inject & drift_flow
@@ -86,7 +142,7 @@ timed_step() {
     echo -n "  → $desc ... "
     local start end dur
     start=$(date +%s.%N)
-    "$@" > /dev/null 2>&1
+    "$@" 2>&1 | tee -a /tmp/demo.log
     end=$(date +%s.%N)
     dur=$(awk "BEGIN { printf \"%.2f\", $end - $start }")
     echo "${dur}s"
@@ -116,17 +172,18 @@ run_batch() {
 
     # 2. Grafana-Annotation
     if [ -n "$GRAFANA_API_KEY" ]; then
-        timed_step "Grafana-Annotation" curl -s -X POST "$GRAFANA_URL/api/annotations" \
-          -H "Authorization: Bearer $GRAFANA_API_KEY" \
-          -H "Content-Type: application/json" \
-          -d "{
-                \"dashboardUID\": \"$DASHBOARD_UID\",
-                \"panelId\": $PANEL_ID,
-                \"time\": $(date +%s)000,
-                \"tags\": [\"batch\"],
-                \"text\": \"$label\"
-              }"
-        sleep 2
+    timed_step "Grafana-Annotation" docker compose -f docker/compose.yml exec api curl -s -X POST "http://grafana:3000/api/annotations" \
+      -H "Authorization: Bearer ${GRAFANA_API_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "{
+            \"dashboardUID\": \"$DASHBOARD_UID\",
+            \"panelId\": $PANEL_ID,
+            \"time\": \$(date +%s)000,
+            \"tags\": [\"batch\"],
+            \"text\": \"$label\"
+          }"
+    sleep 2
+
     else
         echo "  ⚠️  GRAFANA_API_KEY nicht gesetzt – Annotation übersprungen."
         sleep 2
@@ -193,11 +250,11 @@ EOF
 # Hauptprogramm
 # ==========================================================================
 
-echo "🔄 Setze Dashboard-Refresh auf 2s …"
+echo "🔄 Setze Dashboard-Refresh auf 1s …"
 curl -s -X PATCH "$GRAFANA_URL/api/dashboards/uid/$DASHBOARD_UID" \
   -H "Authorization: Bearer $GRAFANA_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"dashboard": {"refresh": "2s"}}' > /dev/null
+  -d '{"dashboard": {"refresh": "1s"}}' > /dev/null
 
 echo "🧹 Lösche alte Prometheus-Daten …"
 docker compose -f docker/compose.yml stop prometheus
@@ -207,7 +264,7 @@ docker compose -f docker/compose.yml up -d prometheus
 # --- NEU: Tabelle dbt_staging.retrain zurücksetzen ---
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'DROP TABLE IF EXISTS dbt_staging."retrain";'
 
-docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'CREATE TABLE dbt_staging.retrain AS TABLE dbt_staging."pre_covid_1M";'
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'CREATE TABLE dbt_staging.retrain AS TABLE dbt_staging."pre_covid_100k";'
 
 # Champion-Metriken aus MLflow laden und initial setzen
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/init-champion-metrics" \
@@ -225,24 +282,16 @@ docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/re
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/drift-alarm" \
   -H "Content-Type: application/json" -d '{"active": 0}' > /dev/null
 
-# Alte Grafana-Annotationen entfernen
-if [ -n "$GRAFANA_API_KEY" ]; then
-    echo "🧹 Lösche alte Grafana-Annotationen …"
-    docker compose -f docker/compose.yml exec -e GRAFANA_API_KEY="$GRAFANA_API_KEY" api python -c "
-import requests, os
-key = os.environ['GRAFANA_API_KEY']
-headers = {'Authorization': f'Bearer {key}'}
-resp = requests.get('http://grafana:3000/api/annotations?tags=batch&type=annotation', headers=headers)
-if resp.status_code == 200:
-    for ann in resp.json():
-        requests.delete(f'http://grafana:3000/api/annotations/{ann[\"id\"]}', headers=headers)
-    print('Erledigt.')
-else:
-    print(f'Fehler beim Abrufen: {resp.status_code}')
-"
-else
-    echo "⚠️  GRAFANA_API_KEY nicht gesetzt – Annotationen können nicht gelöscht werden."
-fi
+# Alte Grafana-Annotationen entfernen (Sichere Radikallösung ohne Schleifen)
+echo "🧹 Bereinige Grafana-Annotationen …"
+docker compose -f docker/compose.yml exec api curl -s -X DELETE \
+  -H "Authorization: Bearer ${GRAFANA_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"tags": ["batch"]}' \
+  "http://grafana:3000/api/annotations" > /dev/null
+
+echo "Erledigt."
+
 
 echo "Leere Tabelle api.predictions …"
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db \
