@@ -1,12 +1,15 @@
 #!/bin/bash
 #set -e
+echo "=================================================================================="
+echo ""
+echo "                            COVID DATA DRIFT DEMO                                 "
+echo ""
+echo "=================================================================================="
+echo ""
 
-
-echo "Stoppe laufenden Traffic-Simulator …"
-docker compose -f docker/compose.yml stop simulator
-docker compose -f docker/compose.yml rm -f simulator
-
-
+echo "Demo preparation starting... "
+docker compose -f docker/compose.yml stop simulator > /dev/null 2>&1
+docker compose -f docker/compose.yml rm -f simulator > /dev/null 2>&1
 
 # --------------------------------------------------------------------------
 # LOAD GRAFANA API KEY
@@ -99,6 +102,8 @@ timed_step() {
     echo "${dur}s"
 }
 
+
+
 # --------------------------------------------------------------------------
 # Batch ausführen
 # --------------------------------------------------------------------------
@@ -111,10 +116,10 @@ run_batch() {
     baseline=$(get_baseline "$month")
 
     echo ""
-    echo "========================================="
+    echo "=================================================================================="
     echo "  $label"
     echo "  Drift Score Baseline = $baseline"
-    echo "========================================="
+    echo "=================================================================================="
     echo ""
     echo "Preparing batch prediction..."
 
@@ -144,7 +149,7 @@ run_batch() {
         sleep 2
     fi
 
-    echo "...preparations finished"
+    echo "...batch preparations finished"
     echo ""   
     echo "Batch prediction started..."
     # 3. Batch-Daten injizieren (ganzer Monat, deterministisch)
@@ -164,7 +169,7 @@ run_batch() {
       api python flows/drift_flow.py > /dev/null 2>&1
     # Wichtig: Prometheus braucht einen Moment, um die neuen Metriken zu scrapen
     sleep 3
-    echo "...predictions finished"
+    echo "...batch predictions finished"
 
     echo ""
     echo "Drift score calculation starting..."
@@ -221,25 +226,25 @@ EOF
     # ------------------------------------------------------------------
 }
 
-# ==========================================================================
+# ===================================================================================================================
 # Hauptprogramm
-# ==========================================================================
+# ===================================================================================================================
 
-echo "🔄 Setze Dashboard-Refresh auf 1s …"
+# echo "🔄 Setze Dashboard-Refresh auf 1s …"
 curl -s -X PATCH "$GRAFANA_URL/api/dashboards/uid/$DASHBOARD_UID" \
   -H "Authorization: Bearer $GRAFANA_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"dashboard": {"refresh": "1s"}}' > /dev/null
 
-echo "🧹 Lösche alte Prometheus-Daten …"
-docker compose -f docker/compose.yml stop prometheus
-docker compose -f docker/compose.yml rm -f prometheus
-docker compose -f docker/compose.yml up -d prometheus
+# echo "🧹 Lösche alte Prometheus-Daten …"
+docker compose -f docker/compose.yml stop prometheus > /dev/null 2>&1
+docker compose -f docker/compose.yml rm -f prometheus > /dev/null 2>&1
+docker compose -f docker/compose.yml up -d prometheus > /dev/null 2>&1
 
 # --- NEU: Tabelle dbt_staging.retrain zurücksetzen ---
-docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'DROP TABLE IF EXISTS dbt_staging."retrain";'
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'DROP TABLE IF EXISTS dbt_staging."retrain";' > /dev/null 2>&1
 
-docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'CREATE TABLE dbt_staging.retrain AS TABLE dbt_staging."pre_covid_100k";'
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'CREATE TABLE dbt_staging.retrain AS TABLE dbt_staging."pre_covid_100k";' > /dev/null 2>&1
 
 # Champion-Metriken aus MLflow laden und initial setzen
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/init-champion-metrics" \
@@ -249,7 +254,7 @@ docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/in
 #docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/baseline" \
 #  -H "Content-Type: application/json" -d '{"value": 0.15}' > /dev/null
 
-docker compose -f docker/compose.yml exec api curl -s -X POST http://api:8000/admin/drift-metrics -H "Content-Type: application/json" -d '{"drift_score": 0.15}'  
+docker compose -f docker/compose.yml exec api curl -s -X POST http://api:8000/admin/drift-metrics -H "Content-Type: application/json" -d '{"drift_score": 0.15}' > /dev/null 2>&1  
 
 # Retrain-Status und Alarm zurücksetzen
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/retrain-status" \
@@ -258,17 +263,17 @@ docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/dr
   -H "Content-Type: application/json" -d '{"active": 0}' > /dev/null
 
 # Alte Grafana-Annotationen entfernen (Sichere Radikallösung ohne Schleifen)
-echo "🧹 Bereinige Grafana-Annotationen …"
+# echo "🧹 Bereinige Grafana-Annotationen …"
 docker compose -f docker/compose.yml exec api curl -s -X DELETE \
   -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"tags": ["batch"]}' \
   "http://grafana:3000/api/annotations" > /dev/null
 
-echo "Erledigt."
+# echo "Erledigt."
 
 
-echo "Leere Tabelle api.predictions …"
+# echo "Leere Tabelle api.predictions …"
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db \
   -c "TRUNCATE TABLE api.predictions RESTART IDENTITY;" > /dev/null
 
@@ -276,67 +281,63 @@ docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_d
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/data-stats" \
   -H "Content-Type: application/json" > /dev/null  
 
-echo "Setze initiale Baseline auf 0.15 …"
-#docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/baseline" \
- # -H "Content-Type: application/json" -d '{"value": 0.15}' > /dev/null
-
-docker compose -f docker/compose.yml exec api curl -s -X POST http://api:8000/admin/drift-metrics -H "Content-Type: application/json" -d '{"drift_score": 0.18}'  
+# echo "Setze initiale Baseline auf 0.18 …"
+docker compose -f docker/compose.yml exec api curl -s -X POST http://api:8000/admin/drift-metrics -H "Content-Type: application/json" -d '{"drift_score": 0.18}' > /dev/null 2>&1  
 
 
-curl -s -X POST http://localhost:8000/admin/retrain-status -H "Content-Type: application/json" -d '{"new_champion": 1}'
-curl -X POST http://localhost:8000/admin/reload-model
+curl -s -X POST http://localhost:8000/admin/retrain-status -H "Content-Type: application/json" -d '{"new_champion": 1}' > /dev/null 2>&1
+curl -X POST http://localhost:8000/admin/reload-model > /dev/null 2>&1
+
+echo "...demo preparations finished"
+echo ""
+read -p "Press [ENTER] to start demo..."
 
 echo ""
-read -p "✅ Alles bereit. Drücke ENTER, um die Demo zu starten ..."
 
-
-echo ""
-echo "Starte Demo (2020 – 2022) …"
-echo ""
 
 # --- 2020 ---
-run_batch "Januar 2020"     "2020-01-01" "2020-02-01" 1
-run_batch "Februar 2020"    "2020-02-01" "2020-03-01" 2
-run_batch "März 2020"       "2020-03-01" "2020-04-01" 3
+run_batch "January 2020"     "2020-01-01" "2020-02-01" 1
+run_batch "Febuary 2020"    "2020-02-01" "2020-03-01" 2
+run_batch "March 2020"       "2020-03-01" "2020-04-01" 3
 run_batch "April 2020"      "2020-04-01" "2020-05-01" 4
-run_batch "Mai 2020"        "2020-05-01" "2020-06-01" 5
-run_batch "Juni 2020"       "2020-06-01" "2020-07-01" 6
-run_batch "Juli 2020"       "2020-07-01" "2020-08-01" 7
+run_batch "May 2020"        "2020-05-01" "2020-06-01" 5
+run_batch "June 2020"       "2020-06-01" "2020-07-01" 6
+run_batch "July 2020"       "2020-07-01" "2020-08-01" 7
 run_batch "August 2020"     "2020-08-01" "2020-09-01" 8
 run_batch "September 2020"  "2020-09-01" "2020-10-01" 9
-run_batch "Oktober 2020"    "2020-10-01" "2020-11-01" 10
+run_batch "October 2020"    "2020-10-01" "2020-11-01" 10
 run_batch "November 2020"   "2020-11-01" "2020-12-01" 11
-run_batch "Dezember 2020"   "2020-12-01" "2021-01-01" 12
+run_batch "December 2020"   "2020-12-01" "2021-01-01" 12
 
 # --- 2021 ---
-run_batch "Januar 2021"     "2021-01-01" "2021-02-01" 1
-run_batch "Februar 2021"    "2021-02-01" "2021-03-01" 2
-run_batch "März 2021"       "2021-03-01" "2021-04-01" 3
+run_batch "January 2021"     "2021-01-01" "2021-02-01" 1
+run_batch "Febuary 2021"    "2021-02-01" "2021-03-01" 2
+run_batch "March 2021"       "2021-03-01" "2021-04-01" 3
 run_batch "April 2021"      "2021-04-01" "2021-05-01" 4
-run_batch "Mai 2021"        "2021-05-01" "2021-06-01" 5
-run_batch "Juni 2021"       "2021-06-01" "2021-07-01" 6
-run_batch "Juli 2021"       "2021-07-01" "2021-08-01" 7
+run_batch "May 2021"        "2021-05-01" "2021-06-01" 5
+run_batch "June 2021"       "2021-06-01" "2021-07-01" 6
+run_batch "July 2021"       "2021-07-01" "2021-08-01" 7
 run_batch "August 2021"     "2021-08-01" "2021-09-01" 8
 run_batch "September 2021"  "2021-09-01" "2021-10-01" 9
-run_batch "Oktober 2021"    "2021-10-01" "2021-11-01" 10
+run_batch "October 2021"    "2021-10-01" "2021-11-01" 10
 run_batch "November 2021"   "2021-11-01" "2021-12-01" 11
-run_batch "Dezember 2021"   "2021-12-01" "2022-01-01" 12
+run_batch "December 2021"   "2021-12-01" "2022-01-01" 12
 
 # --- 2022 ---
-run_batch "Januar 2022"     "2022-01-01" "2022-02-01" 1
-run_batch "Februar 2022"    "2022-02-01" "2022-03-01" 2
-run_batch "März 2022"       "2022-03-01" "2022-04-01" 3
+run_batch "January 2022"     "2022-01-01" "2022-02-01" 1
+run_batch "Febuary 2022"    "2022-02-01" "2022-03-01" 2
+run_batch "March 2022"       "2022-03-01" "2022-04-01" 3
 run_batch "April 2022"      "2022-04-01" "2022-05-01" 4
-run_batch "Mai 2022"        "2022-05-01" "2022-06-01" 5
-run_batch "Juni 2022"       "2022-06-01" "2022-07-01" 6
-run_batch "Juli 2022"       "2022-07-01" "2022-08-01" 7
+run_batch "May 2022"        "2022-05-01" "2022-06-01" 5
+run_batch "June 2022"       "2022-06-01" "2022-07-01" 6
+run_batch "July 2022"       "2022-07-01" "2022-08-01" 7
 run_batch "August 2022"     "2022-08-01" "2022-09-01" 8
 run_batch "September 2022"  "2022-09-01" "2022-10-01" 9
-run_batch "Oktober 2022"    "2022-10-01" "2022-11-01" 10
+run_batch "October 2022"    "2022-10-01" "2022-11-01" 10
 run_batch "November 2022"   "2022-11-01" "2022-12-01" 11
-run_batch "Dezember 2022"   "2022-12-01" "2023-01-01" 12
+run_batch "December 2022"   "2022-12-01" "2023-01-01" 12
 
 echo ""
-echo "=============================================="
-echo " Demo beendet. Metriken in Grafana verfügbar."
-echo "=============================================="
+echo "======================================================================================="
+echo "                              Covid Data Drift Demo finished                           "
+echo "======================================================================================="
