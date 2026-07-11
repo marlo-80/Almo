@@ -80,6 +80,16 @@ echo ""
 echo ""
 
 echo "=============================================================================="
+echo "          Create Default Models for Regression and Classification             "
+echo "=============================================================================="
+echo "Model training started..."
+echo ""
+docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py REG 
+docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py CLASS
+echo ""
+echo "Model training finished"
+
+echo "=============================================================================="
 echo "                             Almo Setup Finished                              "
 echo "=============================================================================="
 echo "...setup has finished. Almo is ready to be used."

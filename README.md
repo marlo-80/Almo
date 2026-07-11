@@ -86,16 +86,23 @@ The entire process runs inside Docker and is orchestrated by Prefect. The main c
 
 
 ## Initialization
+This will create docker container, download data, create dbt models and train prediction models. After the initialization everything is setup for model development as well as executing the Covid Data Drift Demo.
+To start the setup you can use: 
 
-**Change to:**
 ### Option 1: Using `make` (recommended)
 ```bash
 make setup
 ```
-Data will be downloaded to `flight_data/` and imported into `raw.flights`. This process can take a while.
-To monitor progress, observe the database size:
+
 
 ### Option 2: Using `setup.sh`
+```bash
+./setup
+```
+
+
+Downloading, extracting and check of data integrity takes a long time. You can test if data is still written to the PostgreSQL database by executing:
+
  Linux/macOS
 ```bash
 watch -n 5 "docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c \"SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;\""
@@ -120,7 +127,7 @@ Once running, the following endpoints are available:
 | FastAPI    | [http://127.0.0.1:8000](http://127.0.0.1:8000/health)      |
 | Grafana    | [http://127.0.0.1:3000](http://127.0.0.1:3000)      |
 | MLflow     | [http://127.0.0.1:5001](http://127.0.0.1:5001)      |
-| Prefect    | [http://127.0.0.1:4200](http://127.0.0.1:4200)       |
+| Prefect    | [http://127.0.0.1:4200](http://127.0.0.1:4200)      |
 | PostgreSQL | [http://127.0.0.1:5432](http://127.0.0.1:5432)      |
 | Prometheus | [http://127.0.0.1:9090](http://127.0.0.1:9090)      |
 
@@ -315,45 +322,79 @@ curl -s "http://localhost:9090/api/v1/query?query=data_drift_score"
 ## Project Structure
 
 ```
-Almo/
-├── docker/
-│   ├── compose.yml
-│   ├── dockerfile_fastAPI
-│   ├── .env
-│   ├── init-db.sql
+almo/                                      # Project root (repository name)
+├── .env                                   # Environment variables (POSTGRES_USER, etc.)
+├── .gitignore                             # Git ignore file
+├── .dockerignore                          # Docker ignore file
+├── Makefile                               # Make commands (setup, train, demo, etc.)
+├── setup.sh                               # Full setup script (build, start, import, dbt)
+├── README.md                              # Project documentation (updated)
+├── requirements.txt                       # Python dependencies
+│
+├── docker/                                # Docker-related files
+│   ├── compose.yml                        # Main Docker Compose file (all services)
+│   ├── init-db.sql                        # PostgreSQL init script (creates databases)
+│   │
+│   ├── dockerfiles/
+│   │   └── dockerfile_fastAPI             # Dockerfile for the API service
+│   │
 │   ├── monitoring/
-│   │   ├── prometheus.yml
+│   │   ├── prometheus.yml                 # Prometheus scrape config (1s interval)
 │   │   └── grafana/
+│   │       ├── grafana.ini                # Grafana config (min_refresh_interval=1s)
 │   │       ├── dashboards/
+│   │       │   └── flight-delay.json      # Main dashboard (UID: flight-delay)
 │   │       └── provisioning/
+│   │           ├── datasources/
+│   │           │   └── prometheus.yaml    # Prometheus data source (UID: prometheus_ds)
+│   │           └── dashboards/
+│   │               └── dashboards.yml     # Dashboard provisioning config
+│   │
 │   ├── scripts/
-│   │   ├── bootstrap_db.py
-│   │   ├── batch_inject.py
-│   │   └── *.sh
+│   │   ├── bootstrap_db.py                # Data import + Grafana token generation
+│   │   ├── batch_inject.py                # Bulk prediction injection
+│   │   └── generate_grafana_token.sh      # Service account token creation
+│   │
 │   └── simulator/
-│       └── simulate_traffic.py
-├── flows/
-│   ├── config.py
-│   ├── train_flow.py
-│   ├── tune_flow.py
-│   └── drift_flow.py
-├── src/
-│   ├── api.py
-│   ├── data.py
-│   ├── preprocessing.py
-│   └── train.py
-├── dbt/
-│   ├── dbt_project.yml
-│   ├── profiles.yml
+│       └── simulate_traffic.py            # Traffic simulator (continuous API calls)
+│
+├── src/                                   # Python source code
+│   ├── __init__.py                        # (empty)
+│   ├── api.py                             # FastAPI service (predictions, admin, metrics)
+│   ├── data.py                            # Data loading (Kaggle, CSV, PostgreSQL)
+│   ├── preprocessing.py                   # Feature engineering pipeline
+│   └── train.py                           # Training logic + MLflow logging
+│
+├── flows/                                 # Prefect flows
+│   ├── __init__.py                        # (empty)
+│   ├── config.py                          # Model configs (REG, CLASS, OPTUNA, etc.)
+│   ├── train_flow.py                      # Training flow (with promotion)
+│   ├── tune_flow.py                       # Optuna tuning flow
+│   └── drift_flow.py                      # Drift detection flow (Evidently)
+│
+├── dbt/                                   # dbt transformation models
+│   ├── dbt_project.yml                    # dbt project config
+│   ├── profiles.yml                       # dbt profiles (PostgreSQL connection)
 │   └── models/
 │       ├── staging/
+│       │   ├── sources.yml                # Source definition (raw.flights)
+│       │   └── stg_flights.sql            # Staging view
 │       └── training/
-├── Demo/
-│   ├── Pipeline_metaphor6.png
-│   └── covid_data_drift_demo.sh
-├── tests/
-├── requirements.txt
-└── README.md
+│           ├── pre_covid.sql              # Pre‑COVID training table
+│           ├── pre_covid_100k.sql         # Pre‑COVID sample (100k rows)
+│           ├── intra_covid.sql            # Intra‑COVID table
+│           ├── intra_covid_100k.sql       # Intra‑COVID sample (100k rows)
+│           └── retrain.sql                # Retraining table (drift-triggered)
+│
+├── demo/                                  # Demo scripts
+│   └── covid_data_drift_demo.sh           # COVID drift demo (36 months)
+│
+├── tests/                                 # Unit tests
+│   ├── __init__.py                        # (empty)
+│   ├── test_api.py                        # API endpoint test
+│   └── test_preprocessing.py              # Preprocessor test
+│
+└── flight_data/                           # (created at runtime) – CSV files & Kaggle cache
 ```
 
 ---
