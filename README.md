@@ -1,7 +1,7 @@
 # Almo – A Modeling Framework for BTS Flight Data with Delay Prediction API
 
 <p align="center">
-<img src="Demo/Pipeline_metaphor6.png" alt="Almo Pipeline Overview" width="800">
+<img src="demo/Pipeline_metaphor6.png" alt="Almo Pipeline Overview" width="800">
 </p>
 
 Almo is a complete machine learning engineering framework for predicting domestic flight delays in the United States. It analyzes millions of historical flight records from the Bureau of Transportation Statistics to predict arrival delays—both as a continuous value (minutes) and as a binary yes/no decision. The pipeline, orchestrated by **Prefect**, automatically transforms raw data with **dbt**, trains models tracked in **MLflow**, and serves predictions through a **FastAPI** endpoint. **Evidently** monitors prediction data for drift, triggering alarms when the data diverges beyond a defined threshold. The entire system runs in **Docker**, ensuring reproducibility.
