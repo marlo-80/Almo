@@ -47,6 +47,7 @@ Notes
 """
 
 import sys, os
+import subprocess 
 # The project root is the parent directory of the script (docker/scripts/ → repo/)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if project_root not in sys.path:
@@ -149,7 +150,32 @@ def bootstrap():
             os.remove(f)
             print(f"Deleted: {f}")
         except Exception as e:
-            print(f"Could not delete {f}: {e}")      
+            print(f"Could not delete {f}: {e}")
+
+# --------------------------------------------------------------------------
+# GRAFANA TOKEN GENERATION
+# --------------------------------------------------------------------------
+    if len_all > 0:
+        print("Generating Grafana API token...")
+        token_script = "/app/docker/scripts/generate_grafana_token.sh"
+        if os.path.exists(token_script):
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["bash", token_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=120
+                )
+                if result.returncode == 0:
+                    print("✅ Grafana token generated successfully.")
+                else:
+                    print(f"Token generation failed (exit {result.returncode}):")
+                    print(result.stderr)
+            except Exception as e:
+                print(f"Token generation error: {e}")
+        else:
+            print(f"Token script not found: {token_script}")                  
         
     print(f"Import finished. {len_all} rows have been added to raw.flights.")
 

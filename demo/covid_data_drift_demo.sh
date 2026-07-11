@@ -216,7 +216,7 @@ EOF
     if [ -n "$DRIFT_SCORE" ]; then
         echo "Drift Score: $DRIFT_SCORE"
         if (( $(echo "$DRIFT_SCORE > 0.5" | bc -l) )); then
-            echo "!!! DRIFT ALARM !!!"
+            echo "!!! DRIFT ALARM !!!    !!! DRIFT ALARM !!!    !!! DRIFT ALARM !!!"
             echo "Retraining initiated..."
             docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 \
                 -e PREFECT_LOGGING_LEVEL=ERROR \
