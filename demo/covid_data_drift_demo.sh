@@ -118,14 +118,14 @@ timed_step() {
     local desc="$1"
     shift
     echo -n "  → $desc ... "
-    local start end dur
-    start=$(date +%s.%N)
-    "$@" 2>&1 | tee -a /tmp/demo.log
-    end=$(date +%s.%N)
-    dur=$(awk "BEGIN { printf \"%.2f\", $end - $start }")
-    echo "${dur}s"
+    local dur=$(python3 -c "
+import time, subprocess, sys
+start = time.time()
+subprocess.call(sys.argv[1:])
+print(time.time() - start)
+" "$@")
+    printf "%.2fs\n" "$dur"
 }
-
 # --------------------------------------------------------------------------
 # MAIN ORCHESTRATION FUNCTION: RUN_BATCH
 # --------------------------------------------------------------------------
@@ -167,7 +167,7 @@ run_batch() {
               }" > /dev/null 2>&1
         sleep 2
     else
-        echo "GRAFANA_API_KEY nicht gesetzt – Annotation übersprungen."
+        echo "GRAFANA_API_KEY not set – annotation skipped"
         sleep 2
     fi
 
@@ -215,7 +215,7 @@ EOF
     
     if [ -n "$DRIFT_SCORE" ]; then
         echo "Drift Score: $DRIFT_SCORE"
-        if (( $(echo "$DRIFT_SCORE > 0.5" | bc -l) )); then
+        if python3 -c "exit(0 if $DRIFT_SCORE > 0.5 else 1)"; then
             echo "!!! DRIFT ALARM !!!    !!! DRIFT ALARM !!!    !!! DRIFT ALARM !!!"
             echo "Retraining initiated..."
             docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 \

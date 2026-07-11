@@ -2729,7 +2729,7 @@
       "type": "gauge"
     }
   ],
-  "refresh": "1s",
+  "refresh": "2s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": [],

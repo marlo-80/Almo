@@ -39,20 +39,6 @@ Two demos are included to showcase the system's capabilities:
 - **Monitors everything with Prometheus and Grafana** – Custom dashboards display drift scores, champion metrics, prediction rates, model ages, retraining status, and API performance in real time.
 
 
-## Prerequisites
-   - Docker and Docker Compose installed
-   - **Windows users:** Use WSL2 (Ubuntu recommended). Clone the repository **inside** the WSL2 filesystem (e.g., `/home/username/almo`), not on the Windows host, to avoid I/O performance issues.
-   - Terminal open in repository root
-
-## System Requirements
-
-- **RAM:** 16 GB recommended (8 GB minimum for small datasets)
-- **Disk Space:** 50 GB free (for raw data + PostgreSQL + models)
-- **CPU:** 4+ cores recommended (for dbt and training)
-- **Docker Engine:** 20.10+ and Docker Compose 2.0+
-- **OS:** Linux, macOS, or Windows 10/11 with WSL2
-
-
 
 ## How It Works (Pipeline Overview)
 
@@ -92,7 +78,18 @@ The entire process runs inside Docker and is orchestrated by Prefect. The main c
 
 
 
+## Prerequisites
+   - Docker and Docker Compose installed
+   - **Windows users:** Use WSL2 (Ubuntu recommended). Clone the repository **inside** the WSL2 filesystem (e.g., `/home/username/almo`), not on the Windows host, to avoid I/O performance issues.
+   - Terminal open in repository root
 
+## System Requirements
+
+- **RAM:** 16 GB recommended (8 GB minimum for small datasets)
+- **Disk Space:** 50 GB free (for raw data + PostgreSQL + models)
+- **CPU:** 4+ cores recommended (for dbt and training)
+- **Docker Engine:** 20.10+ and Docker Compose 2.0+
+- **OS:** Linux, macOS, or Windows 10/11 with WSL2
 
 
 
