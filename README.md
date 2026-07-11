@@ -80,33 +80,36 @@ The entire process runs inside Docker and is orchestrated by Prefect. The main c
 
 ## Prerequisites
    - Docker and Docker Compose installed
-   - Windows Subsystem for Linux 2 installed
+   - **Windows users:** Use WSL2 (Ubuntu recommended). Clone the repository **inside** the WSL2 filesystem (e.g., `/home/username/almo`), not on the Windows host, to avoid I/O performance issues.
    - Terminal open in repository root
 
 
 
 ## Initialization
 
-Make the `setup.sh` script executable and run it from the repository root
+**Change to:**
+### Option 1: Using `make` (recommended)
 ```bash
-./setup.sh
+make setup
 ```
-
 Data will be downloaded to `flight_data/` and imported into `raw.flights`. This process can take a while.
 To monitor progress, observe the database size:
 
+### Option 2: Using `setup.sh`
+ Linux/macOS
 ```bash
-# Linux/macOS
-watch -n 5 "docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c \"SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;\""
+watch -n 5 "docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c \"SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;\""
+```
 
-# Windows
-while ($true) { Clear-Host; docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;"; Start-Sleep -Seconds 5 }
+Windows
+```bash
+while ($true) { Clear-Host; docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "SELECT pg_size_pretty(pg_database_size('fastapi_db')) AS size;"; Start-Sleep -Seconds 5 }
 ```
 
 Verify the import:
 
 ```bash
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*) FROM raw.flights;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "SELECT COUNT(*) FROM raw.flights;"
 ```
 
 
@@ -142,7 +145,7 @@ docker compose -f docker/compose.yml exec api dbt run --select state:modified+ -
 Verify a model:
 
 ```bash
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging.flights_subset;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging.flights_subset;"
 ```
 
 
@@ -187,10 +190,10 @@ Only `run_name`, `dataset_query`, `target`, `numeric_cols`, `categorical_cols`, 
 
 ### 3. Run the Training Flow
 
-Assuming your config is named `NEW_MODEL`:
+Assuming your config is named `NEW_MODEL` you can execute training with:
 
 ```bash
-docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/train_flow.py NEW_MODEL
+make train CONFIG=NEW_MODEL
 ```
 
 View results in [MLflow](http://127.0.0.1:5001) and [Grafana](http://127.0.0.1:3000).
@@ -206,31 +209,38 @@ Hyperparameter tuning with Optuna is also supported. Define parameter ranges ins
 | `direction` | `str` | Optimization direction | `"minimize"`, `"maximize"` |
 | `param_ranges` | `dict` | Search spaces (replaces `model_params`) | `{"n_estimators": {"type": "int", "low": 50, "high": 300}, …}` |
 
-Start the tuning:
+Assuming your config is named `NEW_MODELS` you can execute training with:
 
 ```bash
-docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 api python flows/tune_flow.py NEW_OPTUNA_MODEL
+make tune CONFIG=NEW_MODELS
 ```
 
 
 ## How to Run the Traffic Simulator
 
-Start the simulator container:
-
+Start the simulator (requires trained models)
 ```bash
-docker compose -f docker/compose.yml up -d simulator
+make simulator-up
 ```
 
-Stop it:
-
+Stop the simulator
 ```bash
-docker compose -f docker/compose.yml down simulator
+make simulator-down
 ```
-
+View simulator logs
+```bash
+make simulator-logs
+```
 ---
 
 ## How to Run the COVID Data Drift Experiment
+### Using MAKE
+```bash
+make demo
+```
 
+
+### Direct Execution
 Make the demo script executable and run it:
 
 ```bash
@@ -253,8 +263,8 @@ The demo will:
 
 ```bash
 docker compose -f docker/compose.yml stop simulator
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "DROP TABLE IF EXISTS api.predictions CASCADE;"
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "DROP TABLE IF EXISTS api.predictions CASCADE;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "
 CREATE TABLE api.predictions (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMPTZ DEFAULT NOW(),
@@ -277,8 +287,8 @@ Create new `.sql` files in `dbt/models/training`. Update `dataset_query` in your
 ### Check the Predictions Database
 
 ```bash
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT COUNT(*) FROM api.predictions;"
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "SELECT * FROM api.predictions ORDER BY timestamp DESC LIMIT 20;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "SELECT COUNT(*) FROM api.predictions;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "SELECT * FROM api.predictions ORDER BY timestamp DESC LIMIT 20;"
 ```
 
 ### Bulk Insert Predictions (Without the API)
@@ -291,10 +301,10 @@ docker compose -f docker/compose.yml exec -e PYTHONPATH=/app api python docker/s
 
 ```bash
 # Clear predictions with index reset
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "TRUNCATE TABLE api.predictions RESTART IDENTITY;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "TRUNCATE TABLE api.predictions RESTART IDENTITY;"
 
 # Clear predictions without index reset
-docker compose -f docker/compose.yml exec postgres psql -U vikmar -d fastapi_db -c "TRUNCATE TABLE api.predictions;"
+docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c "TRUNCATE TABLE api.predictions;"
 
 # Query drift score directly
 curl -s "http://localhost:9090/api/v1/query?query=data_drift_score"
@@ -345,6 +355,26 @@ Almo/
 ├── requirements.txt
 └── README.md
 ```
+
+---
+## Makefile Commands
+
+The project includes a `Makefile` for common tasks. Run `make help` to see all available commands:
+
+| Command | Description |
+|---------|-------------|
+| `make setup` | Full setup (build, start, import, dbt, verify) |
+| `make up` | Start all services (detached) |
+| `make down` | Stop all services |
+| `make logs` | Tail logs from all services |
+| `make train` | Train a model (default: REG) |
+| `make train CONFIG=CLASS` | Train with a specific config |
+| `make tune` | Run Optuna tuning (default: OPTUNA_REG) |
+| `make simulator-up` | Start the traffic simulator |
+| `make simulator-down` | Stop the traffic simulator |
+| `make demo` | Run the COVID data drift demo |
+| `make clean` | Stop containers and remove volumes (⚠️ deletes all data!) |
+| `make help` | Show this help message |
 
 ---
 
