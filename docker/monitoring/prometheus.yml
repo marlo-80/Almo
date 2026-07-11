@@ -1,3 +1,43 @@
+# =============================================================================
+#  Prometheus Scrape Configuration for Flight Delay API
+# =============================================================================
+#
+#  This file defines how Prometheus collects metrics from the FastAPI service.
+#  The API exposes metrics at the `/metrics` endpoint via the
+#  `prometheus_fastapi_instrumentator` library.
+#
+#  ----------------------------------------------------------------------------
+#  Key Settings
+#  ----------------------------------------------------------------------------
+#  - scrape_interval: 1s       → Ultra-fast scraping for demo purposes
+#    (can be increased to 5s-15s for production environments)
+#  - targets: ['api:8000']     → The API service name and port inside the
+#    Docker network (defined in docker/compose.yml)
+#
+#  ----------------------------------------------------------------------------
+#  Mount Path in Container
+#  ----------------------------------------------------------------------------
+#  In the Prometheus container, this file is mounted to:
+#    /etc/prometheus/prometheus.yml
+#
+#  ----------------------------------------------------------------------------
+#  Grafana Integration
+#  ----------------------------------------------------------------------------
+#  Grafana uses this as a data source. Set the `Scrape interval` in
+#  Grafana's data source settings to the same value (1s) for consistency.
+#
+#  ----------------------------------------------------------------------------
+#  Usage
+#  ----------------------------------------------------------------------------
+#  1. Place this file in:  ./monitoring/prometheus.yml
+#  2. In docker-compose.yml:
+#       volumes:
+#         - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+#  3. Restart Prometheus:
+#       docker compose restart prometheus
+#  4. Check targets:  http://localhost:9090/targets
+# =============================================================================
+
 global:
   scrape_interval: 1s
 scrape_configs:

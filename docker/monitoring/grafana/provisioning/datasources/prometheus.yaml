@@ -1,3 +1,42 @@
+# =============================================================================
+#  Grafana Data Source Provisioning: Prometheus
+# =============================================================================
+#
+#  This file defines the Prometheus data source for Grafana.
+#  It is loaded automatically at Grafana startup via the provisioning system.
+#
+#  ----------------------------------------------------------------------------
+#  Purpose
+#  ----------------------------------------------------------------------------
+#  - Adds Prometheus as a data source in Grafana without manual UI setup.
+#  - Sets a fixed UID (`prometheus_ds`) so that dashboards can reference
+#    it reliably.
+#  - Configures `timeInterval: "1s"` and `queryTimeout: "1s"` to align
+#    with the 1-second scrape interval defined in `monitoring/prometheus.yml`.
+#
+#  ----------------------------------------------------------------------------
+#  File Location
+#  ----------------------------------------------------------------------------
+#  - Host:   docker/monitoring/grafana/provisioning/datasources/prometheus.yaml
+#  - Container: /etc/grafana/provisioning/datasources/prometheus.yaml
+#
+#  ----------------------------------------------------------------------------
+#  How It Works
+#  ----------------------------------------------------------------------------
+#  1. Grafana reads this file at startup.
+#  2. The Prometheus data source is created with the specified settings.
+#  3. Dashboards (e.g., `flight-delay.json`) reference the fixed UID.
+#  4. The `access: proxy` setting routes requests through Grafana's backend.
+#
+#  ----------------------------------------------------------------------------
+#  Notes
+#  ----------------------------------------------------------------------------
+#  - The `url: http://prometheus:9090` uses the Docker service name.
+#  - `jsonData.timeInterval` ensures Grafana uses the same scrape interval
+#    as Prometheus for optimal query performance.
+#  - To disable auto-provisioning, remove this file and restart Grafana.
+# =============================================================================
+
 apiVersion: 1
 
 datasources:

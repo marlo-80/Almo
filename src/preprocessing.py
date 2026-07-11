@@ -1,4 +1,6 @@
 # src/preprocessing.py
+
+
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
@@ -13,12 +15,26 @@ from sklearn.preprocessing import (
 from sklearn.compose import ColumnTransformer
 
 
-# ---------------------------------------------------------------------------
-# Hilfs-Transformer
-# ---------------------------------------------------------------------------
+# ============================================================================
+# Helper Transformers
+# ============================================================================
 
 def _sin_cos_transformer(X: np.ndarray) -> np.ndarray:
-    """Wandelt Uhrzeiten im Format HHMM (integer) in sin/cos-Komponenten um."""
+    """
+    Convert time values in HHMM format to sine/cosine components.
+
+    This transformer is used for cyclic encoding of time features (e.g.,
+    departure/arrival times). The time is converted to minutes since midnight,
+    then normalized to a 24‑hour cycle using sine and cosine transformations
+    to preserve the cyclic nature of time (e.g., 23:59 and 00:00 are close).
+
+    Args:
+        X (np.ndarray): Input array containing integer HHMM values (e.g., 900 = 09:00).
+
+    Returns:
+        np.ndarray: Array with two columns per input column:
+                    [sin(angle), cos(angle)] where angle ∈ [0, 2π).
+    """
     X = np.atleast_2d(X)
     hours = X // 100
     minutes = X % 100
@@ -28,12 +44,41 @@ def _sin_cos_transformer(X: np.ndarray) -> np.ndarray:
 
 
 class FrequencyEncoder(BaseEstimator, TransformerMixin):
-    """Ersetzt jeden Kategoriewert durch seine relative Häufigkeit im Trainings-Set."""
+    """
+    Custom encoder that replaces categorical values with their relative frequency.
 
+    This transformer is useful for high‑cardinality categorical features where
+    one‑hot encoding would be too sparse. Each value is replaced by its
+    proportion (frequency) in the training set. Unknown values in the test set
+    are mapped to 0.0.
+
+    Example:
+        >>> X = np.array([['A'], ['B'], ['A'], ['C']])
+        >>> encoder = FrequencyEncoder().fit(X)
+        >>> encoder.transform(X)
+        array([[0.5], [0.25], [0.5], [0.25]])
+
+    Attributes:
+        mappings (dict): For each column index, a dict mapping category value
+                         to its relative frequency in the training set.
+    """
     def __init__(self):
+        """
+        Initialize the frequency encoder with an empty mappings dictionary.
+        """
         self.mappings = {}
 
     def fit(self, X, y=None):
+        """
+        Learn the frequency mapping for each column from the training data.
+
+        Args:
+            X (array-like): Input data of shape (n_samples, n_features).
+            y (optional): Ignored. Provided for scikit‑learn API compatibility.
+
+        Returns:
+            FrequencyEncoder: The fitted encoder instance.
+        """
         X = np.asarray(X)
         self.mappings = {}
         for col_idx in range(X.shape[1]):
@@ -45,6 +90,15 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X):
+        """
+        Transform the input data by replacing values with their frequencies.
+
+        Args:
+            X (array-like): Input data of shape (n_samples, n_features).
+
+        Returns:
+            np.ndarray: Transformed array with frequency values (float64).
+        """
         X = np.asarray(X)
         X_out = np.zeros_like(X, dtype=float)
         for col_idx in range(X.shape[1]):
@@ -55,9 +109,9 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
         return X_out
 
 
-# ---------------------------------------------------------------------------
-# Hauptfunktion
-# ---------------------------------------------------------------------------
+# ============================================================================
+# Main Preprocessor Builder
+# ============================================================================
 
 def build_preprocessor(
     low_card_cols: list[str],
@@ -72,11 +126,53 @@ def build_preprocessor(
     target_type: str = "continuous",        # "continuous" | "binary"
 ) -> ColumnTransformer:
     """
-    Baut den vollständigen ColumnTransformer.
+    Build a complete preprocessing pipeline as a scikit‑learn ColumnTransformer.
 
-    Strategien:
-      - low_card_strategy:  onehot / ordinal
-      - high_card_strategy: target / ordinal / frequency
+    The pipeline handles five groups of features:
+    1. Low‑cardinality categorical features (few unique values)
+       → One‑hot or ordinal encoding.
+    2. High‑cardinality categorical features (many unique values)
+       → Target, ordinal, or frequency encoding.
+    3. Cyclic time features (e.g., CRSDepTime, CRSArrTime)
+       → Sin/cos transformation.
+    4. Standard numeric features
+       → Imputation + StandardScaler.
+    5. Skewed numeric features
+       → Imputation + log transform + StandardScaler.
+
+    Args:
+        low_card_cols (list[str]): Columns with few unique values (e.g., month, day_of_week).
+        high_card_cols (list[str]): Columns with many unique values (e.g., airport IDs).
+        cyclic_cols (list[str]): Time columns in HHMM format requiring cyclic encoding.
+        numeric_cols (list[str]): Standard numeric features (e.g., crs_elapsed_time).
+        skewed_numeric_cols (list[str]): Numeric features with skewed distribution (e.g., distance).
+        low_card_strategy (str): Encoding for low‑cardinality features.
+                                 Options: "onehot" (default) or "ordinal".
+        high_card_strategy (str): Encoding for high‑cardinality features.
+                                  Options: "target" (default), "ordinal", or "frequency".
+        impute_num (str): Imputation strategy for numeric columns.
+                          Options: "median" (default), "mean", "most_frequent".
+        impute_cat (str): Imputation strategy for categorical columns.
+                          Options: "most_frequent" (default).
+        target_type (str): Type of target variable for TargetEncoder.
+                           Options: "continuous" (default) or "binary".
+
+    Returns:
+        ColumnTransformer: A fully configured scikit‑learn preprocessor.
+
+    Raises:
+        ValueError: If an invalid `low_card_strategy` or `high_card_strategy` is provided.
+
+    Example:
+        >>> preprocessor = build_preprocessor(
+        ...     low_card_cols=["month", "day_of_week"],
+        ...     high_card_cols=["origin_airport_id"],
+        ...     cyclic_cols=["crs_dep_time"],
+        ...     numeric_cols=["crs_elapsed_time"],
+        ...     skewed_numeric_cols=["distance"],
+        ...     low_card_strategy="onehot",
+        ...     high_card_strategy="target"
+        ... )
     """
 
     # ---- Low‑Cardinality --------------------------------------------------
@@ -112,26 +208,26 @@ def build_preprocessor(
     else:
         raise ValueError(f"Unbekannte high_card_strategy: {high_card_strategy}")
 
-    # ---- Zyklische Uhrzeiten ----------------------------------------------
+    # ---- Cyclic Times -----------------------------------------------------
     cyclic_pipe = Pipeline([
         ("imputer", SimpleImputer(strategy=impute_num)),
         ("sin_cos", FunctionTransformer(_sin_cos_transformer, validate=False)),
     ])
 
-    # ---- Standard‑Numerisch -----------------------------------------------
+    # ---- Numeric default --------------------------------------------------
     num_pipe = Pipeline([
         ("imputer", SimpleImputer(strategy=impute_num)),
         ("scaler", StandardScaler()),
     ])
 
-    # ---- Schiefe Numerisch (Log + Scale) ----------------------------------
+    # ---- Skewed numeric (log + scale) -------------------------------------
     skewed_num_pipe = Pipeline([
         ("imputer", SimpleImputer(strategy=impute_num)),
         ("log", FunctionTransformer(np.log1p, validate=False)),
         ("scaler", StandardScaler()),
     ])
 
-    # ---- Zusammenbau ------------------------------------------------------
+    # ---- Assemly ----------------------------------------------------------
     preprocessor = ColumnTransformer([
         ("low_card",    low_card_pipe,      low_card_cols),
         ("high_card",   high_card_pipe,     high_card_cols),

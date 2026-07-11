@@ -1,4 +1,96 @@
 # src/api.py
+"""
+FastAPI Service – Flight Delay Prediction API with Prometheus Monitoring
+
+This module implements the main REST API for flight delay predictions. It
+loads the champion regression and classification models from MLflow at
+startup, serves predictions via the `/predict` endpoint, and exposes
+administrative endpoints for updating metrics, triggering retraining, and
+reloading models.
+
+The API is instrumented with Prometheus metrics (via `prometheus_fastapi_instrumentator`
+and custom gauges/counters) and integrated with Grafana for real-time
+monitoring of drift scores, model performance, and system health.
+
+------------------------------------------------------------------------------
+Key Features
+------------------------------------------------------------------------------
+- Model Loading: At startup (lifespan), loads `regressor@champion` and
+  `classifier@champion` from MLflow. If models are missing, it logs warnings
+  but continues running (graceful degradation).
+- Prediction: `/predict` accepts flight features (JSON), applies both models,
+  stores the input, predictions, and ground truth (if provided) in the
+  `api.predictions` table, and returns regression and classification results.
+- Admin Endpoints:
+  - `/admin/reload-model` → reloads champion models from MLflow.
+  - `/admin/drift-metrics` → updates drift scores and performance metrics.
+  - `/admin/champion-metrics` → updates champion baseline metrics.
+  - `/admin/data-stats` → refreshes training/prediction row counts.
+  - `/admin/top-airlines` → updates per-airline delay rates.
+  - `/admin/baseline` → sets dynamic drift baseline (for demos).
+  - `/admin/retrain` → appends current predictions to `dbt_staging.retrain`,
+    clears `api.predictions`, and triggers a retraining flow (via subprocess).
+  - `/admin/retrain-status` → sets retrain status gauge.
+  - `/admin/drift-alarm` → sets drift alarm gauge.
+  - `/admin/init-champion-metrics` → loads champion metrics from MLflow and
+    initializes drift metrics to champion values.
+- Health Check: `/health` returns whether regression/classification models are loaded.
+
+------------------------------------------------------------------------------
+Prometheus Metrics (Exposed via /metrics)
+------------------------------------------------------------------------------
+The service exposes a rich set of custom metrics for monitoring:
+- Drift metrics: drift score, actual/predicted delay rates, classification F1,
+  ROC‑AUC, accuracy, precision, recall, specificity, confidence mean.
+- Regression metrics: MAE, RMSE, R², residual skewness, rolling std.
+- Champion baselines: RMSE, MAE, R², F1, ROC‑AUC, etc. for comparison.
+- Operational: prediction count, request duration, DB write duration,
+  model load duration, model age (hours).
+- System: training rows, prediction rows, top delay airport, top airlines.
+
+------------------------------------------------------------------------------
+Environment Variables
+------------------------------------------------------------------------------
+- MLFLOW_TRACKING_URI : MLflow server URL (default: http://mlflow:5000)
+- DB_URI              : PostgreSQL connection string
+                       (default: postgresql://vikmar:vikmar@postgres:5432/fastapi_db)
+
+Note: The default DB_URI uses `vikmar` – it is recommended to override via
+      environment variables (e.g., in `docker-compose.yml`).
+
+------------------------------------------------------------------------------
+Dependencies
+------------------------------------------------------------------------------
+- FastAPI, Uvicorn
+- MLflow (model loading, client)
+- SQLAlchemy (PostgreSQL)
+- Prometheus Client (custom metrics)
+- pandas, numpy, json, time
+
+------------------------------------------------------------------------------
+Usage
+------------------------------------------------------------------------------
+The service is typically started via Docker Compose:
+    docker compose up -d api
+
+Or manually:
+    uvicorn src.api:app --host 0.0.0.0 --port 8000
+
+------------------------------------------------------------------------------
+Notes
+------------------------------------------------------------------------------
+- Models are loaded once at startup and can be reloaded via `/admin/reload-model`.
+- Prediction results are stored asynchronously (with ground truth when provided).
+- The `/admin/retrain` endpoint uses subprocess to launch training flows as
+  background jobs – ensure that the flow scripts are accessible and that the
+  environment is correctly set (PYTHONPATH, etc.).
+- The API is designed to be robust: missing models or database tables do not
+  prevent startup; they are logged as warnings and handled gracefully at runtime.
+"""
+
+# --------------------------------------------------------------------------
+# IMPORTS
+# --------------------------------------------------------------------------
 import pandas as pd
 import os
 import json
@@ -14,20 +106,23 @@ from sqlalchemy import create_engine, text
 from flows.config import API_MODELS
 from prometheus_client import Gauge, Counter, Histogram
 
-# --- Umgebungsvariablen ---------------------------------------------------
+# --------------------------------------------------------------------------
+# ENVIRONMENT VARIABLES AND DATABASE ENGINE
+# --------------------------------------------------------------------------
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 DB_URI = os.environ.get("DB_URI", "postgresql://vikmar:vikmar@postgres:5432/fastapi_db")
 engine = create_engine(DB_URI)
 
-
-# --- Lifespan: Modelle beim Start laden ------------------------------------
+# --------------------------------------------------------------------------
+# LIFESPAN FUNCTION (MODEL LOADING AND INITIALIZATION)
+# --------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Loading regressor and classifier from MLFlow registry."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = MlflowClient()
 
-    # ----- Modellladezeit messen -----
+    # ----- Measure model load time -----
     start_load = time.time()
 
     for task, cfg in API_MODELS.items():
@@ -57,7 +152,7 @@ async def lifespan(app: FastAPI):
     load_duration = time.time() - start_load
     MODEL_LOAD_DURATION_SECONDS.set(load_duration)
 
-    # ----- Champion‑Baselines aus MLflow laden -----
+    # ----- Load champion baselines from MLflow -----
     try:
         for model_name in ['regressor', 'classifier']:
             mv = client.get_model_version_by_alias(model_name, 'champion')
@@ -76,11 +171,11 @@ async def lifespan(app: FastAPI):
                 CHAMPION_CLASSIFIER_RECALL.set(metrics.get('recall', 0.0))
                 CHAMPION_CLASSIFIER_SPECIFICITY.set(metrics.get('specificity', 0.0))
                 CHAMPION_CLASSIFIER_CONFIDENCE_MEAN.set(metrics.get('confidence_mean', 0.0))
-        print("Champion‑Baselines aus MLflow geladen.")
+        print("Champion baselines loaded from MLflow.")
     except Exception as e:
-        print(f"WARNUNG: Konnte Champion‑Baselines nicht laden – {e}")
+        print(f"WARNING: Could not load champion baselines – {e}")
 
-    # ----- Zeilenanzahlen initial setzen -----
+    # ----- Initialize row counts -----
     with engine.connect() as conn:
         try:
             TRAIN_ROWS.set(conn.execute(text("SELECT COUNT(*) FROM dbt_staging.retrain")).scalar())
@@ -94,7 +189,7 @@ async def lifespan(app: FastAPI):
             print(f"WARNING: Could not read prediction rows: {e}")
 
 
-    # ----- Modell‑Alter berechnen (beide Modelle) -----
+    # ----- Calculate model age (both models) -----
     from datetime import datetime, timezone
     for model_name, gauge in [('regressor', MODEL_AGE_HOURS_REGRESSOR),
                                ('classifier', MODEL_AGE_HOURS_CLASSIFIER)]:
@@ -107,7 +202,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             gauge.set(0.0)
 
-    # ----- Champion‑Modell‑Info in Prometheus bereitstellen -----
+    # ----- Provide champion model info in Prometheus -----
     CHAMPION_MODEL_INFO.clear()
     if app.state.regression_pipeline is not None:
         CHAMPION_MODEL_INFO.labels(
@@ -120,17 +215,19 @@ async def lifespan(app: FastAPI):
             version=app.state.classification_version
         ).set(1)
 
-    # ----- Drift‑Baseline (konstant) -----
+    # ----- Drift baseline (constant) -----
     # DRIFT_BASELINE.set(0.05)
 
     yield
 
-    # Aufräumen
+    # Cleanup
     for task in API_MODELS:
         delattr(app.state, f"{task}_pipeline")
 
 
-# --- FastAPI‑App -----------------------------------------------------------
+# --------------------------------------------------------------------------
+# FASTAPI APPLICATION AND INSTRUMENTATION
+# --------------------------------------------------------------------------
 app = FastAPI(
     title="Flight Delay Prediction API",
     description="Liefert Regressions- und Klassifikationsvorhersage",
@@ -139,58 +236,60 @@ app = FastAPI(
 )
 Instrumentator().instrument(app).expose(app)
 
-# --- Prometheus Metriken ---------------------------------------------------
-# – Drift‑Metriken
+# --------------------------------------------------------------------------
+# PROMETHEUS METRICS
+# --------------------------------------------------------------------------
+# -- Drift metrics --
 DRIFT_SCORE = Gauge("data_drift_score", "Overall data drift score (0=no drift, 1=full drift)")
 DRIFT_ACTUAL_RATE = Gauge("prediction_drift_actual_rate", "Actual fraction of delayed flights in current batch")
 DRIFT_PREDICTED_RATE = Gauge("prediction_drift_predicted_rate", "Predicted fraction of delayed flights in current batch")
 DRIFT_RATE_DELTA = Gauge("prediction_drift_rate_delta", "Predicted Delay Rate minus Actual Delay Rate")
-DRIFT_CLASS_F1 = Gauge("prediction_drift_class_f1", "F1-Score des Klassifikators im aktuellen Batch")
-DRIFT_CLASS_ROC_AUC = Gauge("prediction_drift_class_roc_auc", "ROC-AUC des Klassifikators im aktuellen Batch")
-DRIFT_CLASS_ACCURACY = Gauge("prediction_drift_class_accuracy", "Accuracy des Klassifikators im aktuellen Batch")
-DRIFT_CLASS_PRECISION = Gauge("prediction_drift_class_precision", "Precision des Klassifikators im aktuellen Batch")
-DRIFT_CLASS_RECALL = Gauge("prediction_drift_class_recall", "Recall des Klassifikators im aktuellen Batch")
-DRIFT_CLASS_SPECIFICITY = Gauge("prediction_drift_class_specificity", "Specificity (True Negative Rate) des Klassifikators im aktuellen Batch")
+DRIFT_CLASS_F1 = Gauge("prediction_drift_class_f1", "F1 score of the classifier in the current batch")
+DRIFT_CLASS_ROC_AUC = Gauge("prediction_drift_class_roc_auc", "ROC-AUC of the classifier in the current batch")
+DRIFT_CLASS_ACCURACY = Gauge("prediction_drift_class_accuracy", "Accuracy of the classifier in the current batch")
+DRIFT_CLASS_PRECISION = Gauge("prediction_drift_class_precision", "Precision of the classifier in the current batch")
+DRIFT_CLASS_RECALL = Gauge("prediction_drift_class_recall", "Recall of the classifier in the current batch")
+DRIFT_CLASS_SPECIFICITY = Gauge("prediction_drift_class_specificity", "Specificity (True Negative Rate) of the classifier in the current batch")
 DRIFT_MAE = Gauge("prediction_drift_mae", "Mean Absolute Error between regression prediction and actual")
-DRIFT_REGRESSOR_RMSE = Gauge("prediction_drift_rmse", "RMSE des Regressors im aktuellen Batch")
-DRIFT_REGRESSOR_R2 = Gauge("prediction_drift_r2", "R² des Regressors im aktuellen Batch")
-DRIFT_CLASS_CONFIDENCE_MEAN = Gauge("prediction_drift_class_confidence_mean", "Mittlere predicted probability (Klasse 1) im aktuellen Batch")
-DRIFT_RESIDUAL_SKEWNESS = Gauge("prediction_drift_residual_skewness", "Schiefe der Residuen (true - prediction) im aktuellen Batch")
-DRIFT_PREDICTION_STDDEV_ROLLING = Gauge("prediction_stddev_rolling", "Rollierende Standardabweichung der letzten 100 Regressionsvorhersagen")
+DRIFT_REGRESSOR_RMSE = Gauge("prediction_drift_rmse", "RMSE of the regressor in the current batch")
+DRIFT_REGRESSOR_R2 = Gauge("prediction_drift_r2", "R² of the regressor in the current batch")
+DRIFT_CLASS_CONFIDENCE_MEAN = Gauge("prediction_drift_class_confidence_mean", "Mean predicted probability (class 1) in the current batch")
+DRIFT_RESIDUAL_SKEWNESS = Gauge("prediction_drift_residual_skewness", "Skewness of residuals (true - prediction) in the current batch")
+DRIFT_PREDICTION_STDDEV_ROLLING = Gauge("prediction_stddev_rolling", "Rolling standard deviation of the last 100 regression predictions")
 
-# – Champion‑Baselines Regressor
-CHAMPION_REGRESSOR_RMSE = Gauge("champion_regressor_rmse", "RMSE des aktuellen Champion-Regressors")
-CHAMPION_REGRESSOR_MAE  = Gauge("champion_regressor_mae",  "MAE des aktuellen Champion-Regressors")
-CHAMPION_REGRESSOR_R2   = Gauge("champion_regressor_r2",   "R² des aktuellen Champion-Regressors")
-CHAMPION_REGRESSOR_RESIDUAL_SKEWNESS = Gauge("champion_regressor_residual_skewness", "Residuen-Schiefe des aktuellen Champion-Regressors")
+# -- Champion baselines (regressor) --
+CHAMPION_REGRESSOR_RMSE = Gauge("champion_regressor_rmse", "RMSE of the current champion regressor")
+CHAMPION_REGRESSOR_MAE  = Gauge("champion_regressor_mae",  "MAE of the current champion regressor")
+CHAMPION_REGRESSOR_R2   = Gauge("champion_regressor_r2",   "R² of the current champion regressor")
+CHAMPION_REGRESSOR_RESIDUAL_SKEWNESS = Gauge("champion_regressor_residual_skewness", "Residual skewness of the current champion regressor")
 
-# – Champion‑Baselines Classifier
-CHAMPION_CLASSIFIER_F1      = Gauge("champion_classifier_f1",      "F1-Score des aktuellen Champion-Classifiers")
-CHAMPION_CLASSIFIER_ROC_AUC = Gauge("champion_classifier_roc_auc", "ROC-AUC des aktuellen Champion-Classifiers")
-CHAMPION_CLASSIFIER_ACCURACY = Gauge("champion_classifier_accuracy", "Accuracy des aktuellen Champion-Classifiers")
-CHAMPION_CLASSIFIER_PRECISION = Gauge("champion_classifier_precision", "Precision des aktuellen Champion-Classifiers")
-CHAMPION_CLASSIFIER_RECALL    = Gauge("champion_classifier_recall",    "Recall des aktuellen Champion-Classifiers")
-CHAMPION_CLASSIFIER_SPECIFICITY = Gauge("champion_classifier_specificity", "Specificity des aktuellen Champion-Classifiers")
-CHAMPION_CLASSIFIER_CONFIDENCE_MEAN = Gauge("champion_classifier_confidence_mean", "Mittlere Confidence (Klasse 1) des aktuellen Champion-Classifiers")
+# -- Champion baselines (classifier) --
+CHAMPION_CLASSIFIER_F1      = Gauge("champion_classifier_f1",      "F1 score of the current champion classifier")
+CHAMPION_CLASSIFIER_ROC_AUC = Gauge("champion_classifier_roc_auc", "ROC-AUC of the current champion classifier")
+CHAMPION_CLASSIFIER_ACCURACY = Gauge("champion_classifier_accuracy", "Accuracy of the current champion classifier")
+CHAMPION_CLASSIFIER_PRECISION = Gauge("champion_classifier_precision", "Precision of the current champion classifier")
+CHAMPION_CLASSIFIER_RECALL    = Gauge("champion_classifier_recall",    "Recall of the current champion classifier")
+CHAMPION_CLASSIFIER_SPECIFICITY = Gauge("champion_classifier_specificity", "Specificity of the current champion classifier")
+CHAMPION_CLASSIFIER_CONFIDENCE_MEAN = Gauge("champion_classifier_confidence_mean", "Mean confidence (class 1) of the current champion classifier")
 
-# – Sonstige Metriken
-TRAIN_ROWS = Gauge("train_rows", "Anzahl Zeilen im Trainingsdatensatz")
-PREDICTION_ROWS = Gauge("prediction_rows", "Anzahl Zeilen in api.predictions")
-TOP_DELAY_AIRPORT = Gauge("top_delay_airport_id", "Origin‑Airport‑ID mit den meisten Verspätungen im aktuellen Batch")
+# -- Other metrics --
+TRAIN_ROWS = Gauge("train_rows", "Number of rows in the training dataset")
+PREDICTION_ROWS = Gauge("prediction_rows", "Number of rows in api.predictions")
+TOP_DELAY_AIRPORT = Gauge("top_delay_airport_id", "Origin airport ID with the most delays in the current batch")
 MODEL_AGE_HOURS_REGRESSOR = Gauge("model_age_hours_regressor", "Age of the current champion regressor in hours")
 MODEL_AGE_HOURS_CLASSIFIER = Gauge("model_age_hours_classifier", "Age of the current champion classifier in hours")
 TOP_AIRLINE_DELAY_RATE = Gauge("top_airline_delay_rate", "Predicted delay rate per airline", ["rank", "airline"])
 PREDICTION_COUNT = Counter("predictions_total", "Total number of prediction requests served")
 DRIFT_BASELINE = Gauge("drift_baseline", "Baseline drift score (expected noise level)")
 
-# – Betriebsmetriken
+# -- Operational metrics --
 PREDICTION_DURATION_SECONDS = Histogram("prediction_duration_seconds", "Model prediction time (excl. DB write)")
 DB_WRITE_DURATION_SECONDS = Histogram("db_write_duration_seconds", "Duration of INSERT into api.predictions")
 MODEL_LOAD_DURATION_SECONDS = Gauge("model_load_duration_seconds", "Time to load models from MLflow at startup")
 
-# – Neue Metriken für Demo / Retraining
+# -- Metrics for demo / retraining --
 RETRAIN_STATUS = Gauge("retrain_status", "1 if new champion was promoted after drift retraining")
-DRIFT_BASELINE_DYNAMIC = Gauge("drift_baseline_dynamic", "Monatlich angepasste Drift-Baseline")
+DRIFT_BASELINE_DYNAMIC = Gauge("drift_baseline_dynamic", "Monthly adjusted drift baseline")
 CHAMPION_MODEL_INFO = Gauge(
     "champion_model_info",
     "Current champion model version",
@@ -200,13 +299,18 @@ CHAMPION_MODEL_INFO = Gauge(
 
 DRIFT_ALARM_ACTIVE = Gauge("drift_alarm_active", "1 while drift alarm is active, 0 otherwise")
 
+# --------------------------------------------------------------------------
+# REQUEST/RESPONSE MODELS
+# --------------------------------------------------------------------------
 class PredictionOutput(BaseModel):
     regression_prediction: float
     classification_prediction: int
     classification_proba: float | None = None
 
 
-# --- Endpunkte -------------------------------------------------------------
+# --------------------------------------------------------------------------
+# PREDICTION ENDPOINT
+# --------------------------------------------------------------------------
 @app.post("/predict", response_model=PredictionOutput)
 async def predict(request: Request):
     if app.state.regression_pipeline is None or app.state.classification_pipeline is None:
@@ -218,20 +322,20 @@ async def predict(request: Request):
         ground_truth = input_data.pop("ground_truth", None)
         df = pd.DataFrame([input_data])
 
-        # Reine Vorhersagezeit messen
+        # Measure pure prediction time
         t0 = time.time()
 
         # Regression
         reg_pred = app.state.regression_pipeline.predict(df)[0]
 
-        # Klassifikation
+        # Classification
         class_pred = app.state.classification_pipeline.predict(df)[0]
         class_proba = app.state.classification_pipeline.predict_proba(df)[0, 1]
 
         pred_duration = time.time() - t0
         PREDICTION_DURATION_SECONDS.observe(pred_duration)
 
-        # DB‑Schreibzeit messen
+        # Measure DB write time
         log_to_db = input_data.copy()
         log_to_db["flight_uid"] = flight_uid
         t0_db = time.time()
@@ -271,20 +375,24 @@ async def predict(request: Request):
         raise HTTPException(status_code=400, detail=f"Prediction error: {str(e)}")
 
 
+# --------------------------------------------------------------------------
+# ADMIN ENDPOINTS
+# --------------------------------------------------------------------------
+
 @app.post("/admin/reload-model")
 async def reload_model():
-    """Lädt beide Modelle neu aus der Registry und aktualisiert Metriken (Alter, Version)."""
+    """Reloads both models from the registry and updates metrics (age, version)."""
     from datetime import datetime, timezone
 
     client = MlflowClient()
     start_reload = time.time()
 
-    # Modelle neu laden
+    # Reload models
     for task, cfg in API_MODELS.items():
         model_uri = f"models:/{cfg['model_name']}@{cfg['alias']}"
         try:
             if task == "classification":
-                pipeline = mlflow.sklearn.load_model(model_uri)   # für predict_proba
+                pipeline = mlflow.sklearn.load_model(model_uri)   # for predict_proba
             else:
                 pipeline = mlflow.pyfunc.load_model(model_uri)
 
@@ -292,14 +400,14 @@ async def reload_model():
             version_str = f"{cfg['model_name']}_v{mv.version}@{cfg['alias']}"
             setattr(app.state, f"{task}_pipeline", pipeline)
             setattr(app.state, f"{task}_version", version_str)
-            print(f"Modell '{task}' neu geladen: {version_str}")
+            print(f"Model '{task}' reloaded: {version_str}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Reload failed for {task}: {e}")
 
-    # Ladezeit der Modelle
+    # Model load time
     MODEL_LOAD_DURATION_SECONDS.set(time.time() - start_reload)
 
-    # Champion‑Modell‑Info (Labels) aktualisieren
+    # Update champion model info (labels)
     CHAMPION_MODEL_INFO.clear()
     if app.state.regression_pipeline is not None:
         CHAMPION_MODEL_INFO.labels(
@@ -312,17 +420,17 @@ async def reload_model():
             version=app.state.classification_version
         ).set(1)
 
-    # Modellalter (beide Modelle) neu berechnen
+    # Recalculate model ages (both models)
     for model_name, gauge in [('regressor', MODEL_AGE_HOURS_REGRESSOR),
                                ('classifier', MODEL_AGE_HOURS_CLASSIFIER)]:
         try:
             mv = client.get_model_version_by_alias(model_name, 'champion')
             run = client.get_run(mv.run_id)
-            start_time = run.info.start_time / 1000.0   # Millisekunden → Sekunden
+            start_time = run.info.start_time / 1000.0   # milliseconds → seconds
             age_seconds = datetime.now(timezone.utc).timestamp() - start_time
-            gauge.set(age_seconds / 3600.0)             # Stunden
+            gauge.set(age_seconds / 3600.0)             # hours
         except Exception as e:
-            print(f"WARNUNG: Konnte Alter für {model_name} nicht berechnen: {e}")
+            print(f"WARNING: Could not calculate age for {model_name}: {e}")
             gauge.set(0.0)
 
     return {"status": "reloaded"}
@@ -330,6 +438,7 @@ async def reload_model():
 
 @app.post("/admin/drift-metrics")
 async def update_drift_metrics(data: dict):
+    """Update all drift and performance metrics from the drift flow."""
     try:
         DRIFT_SCORE.set(float(data.get("drift_score", 0.0)))
         DRIFT_MAE.set(float(data.get("mae", 0.0)))
@@ -355,7 +464,7 @@ async def update_drift_metrics(data: dict):
 
 @app.post("/admin/champion-metrics")
 async def update_champion_metrics(data: dict):
-    """Setzt die Referenz-Metriken des aktuellen Champions (für Vergleichslinien in Grafana)."""
+    """Sets the reference metrics of the current champion (for comparison lines in Grafana)."""
     try:
         CHAMPION_REGRESSOR_RMSE.set(float(data.get("regressor_rmse", 0.0)))
         CHAMPION_REGRESSOR_MAE.set(float(data.get("regressor_mae", 0.0)))
@@ -376,6 +485,7 @@ async def update_champion_metrics(data: dict):
 
 @app.post("/admin/data-stats")
 async def update_data_stats():
+    """Refresh training and prediction row counts."""
     with engine.connect() as conn:
         TRAIN_ROWS.set(conn.execute(text("SELECT COUNT(*) FROM dbt_staging.retrain")).scalar())
         PREDICTION_ROWS.set(conn.execute(text("SELECT COUNT(*) FROM api.predictions")).scalar())
@@ -384,6 +494,7 @@ async def update_data_stats():
 
 @app.post("/admin/top-airlines")
 async def update_top_airlines(data: dict):
+    """Set per-airline delay rates for the top airlines panel."""
     airlines = data.get("airlines", [])
     for entry in airlines:
         TOP_AIRLINE_DELAY_RATE.labels(
@@ -395,7 +506,7 @@ async def update_top_airlines(data: dict):
 
 @app.post("/admin/baseline")
 async def set_baseline(data: dict):
-    """Setzt die dynamische Baseline (für Demo‑Zwecke)."""
+    """Sets the dynamic drift baseline (for demo purposes)."""
     value = float(data.get("value", 0.15))
     DRIFT_BASELINE_DYNAMIC.set(value)
     return {"status": "ok", "baseline": value}
@@ -403,15 +514,15 @@ async def set_baseline(data: dict):
 
 @app.post("/admin/retrain")
 async def trigger_retrain():
-    """Hängt die aktuellen Predictions an die Tabelle dbt_staging.retrain an, löscht sie dann und startet Retraining."""
+    """Appends current predictions to dbt_staging.retrain, then clears predictions and starts retraining."""
     import subprocess
     from sqlalchemy import text as sa_text
 
-    target_table = "retrain"                    # Fester Tabellenname
+    target_table = "retrain"                    # Fixed table name
     full_table = f"dbt_staging.{target_table}"  # dbt_staging.retrain
 
     with engine.connect() as conn:
-        # 1. Tabelle anlegen, falls nicht vorhanden (Struktur aus pre_covid_test kopieren)
+        # 1. Create table if it does not exist (copy structure from pre_covid_test)
         exists = conn.execute(
             sa_text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='dbt_staging' AND table_name=:tbl)"),
             {"tbl": target_table}
@@ -420,7 +531,7 @@ async def trigger_retrain():
             conn.execute(sa_text(f"CREATE TABLE {full_table} (LIKE dbt_staging.pre_covid_100k)"))
             conn.commit()
 
-        # 2. Spaltenstruktur ermitteln
+        # 2. Determine column structure
         cols = conn.execute(
             sa_text(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='dbt_staging' AND table_name=:tbl ORDER BY ordinal_position"),
             {"tbl": target_table}
@@ -450,7 +561,7 @@ async def trigger_retrain():
                 cast = type_cast_map.get(pg_type, 'text')
                 select_parts.append(f"(input_features->>'{col_name}')::{cast}")
 
-        # 3. Aktuelle Predictions an die Tabelle anhängen
+        # 3. Append current predictions to the table
         insert_sql = f"""
             INSERT INTO {full_table} ({', '.join(col_names)})
             SELECT {', '.join(select_parts)}
@@ -460,11 +571,11 @@ async def trigger_retrain():
         conn.execute(sa_text(insert_sql))
         conn.commit()
 
-        # 4. Predictions löschen, damit sie beim nächsten Mal nicht doppelt eingefügt werden
+        # 4. Clear predictions so they are not inserted again next time
         conn.execute(sa_text("TRUNCATE TABLE api.predictions RESTART IDENTITY"))
         conn.commit()
 
-    # 5. Retraining asynchron starten
+    # 5. Start retraining asynchronously
     def run_training(config_name):
         subprocess.Popen(
             ["python", "flows/train_flow.py", config_name],
@@ -479,23 +590,25 @@ async def trigger_retrain():
 
 @app.post("/admin/retrain-status")
 async def set_retrain_status(data: dict):
+    """Set retraining status gauge (1 if new champion promoted)."""
     RETRAIN_STATUS.set(int(data.get("new_champion", 0)))
     return {"status": "ok"}
 
 
 @app.post("/admin/drift-alarm")
 async def set_drift_alarm(data: dict):
+    """Set drift alarm active gauge and reset retrain status."""
     active = int(data.get("active", 0))
     DRIFT_ALARM_ACTIVE.set(active)
-    # Hier muss retrain_status auf 0 gesetzt werden!!!
-    # Setze retrain_status auf 0, sobald der Alarm gesetzt wird
+    # retrain_status must be set to 0 here
+    # Set retrain_status to 0 as soon as the alarm is set
     RETRAIN_STATUS.set(0)
     
     return {"status": "ok", "active": active}
 
 @app.post("/admin/init-champion-metrics")
 async def init_champion_metrics():
-    """Setzt alle Champion-Metriken und initialisiert Drift-Metriken mit Champion-Werten."""
+    """Sets all champion metrics and initializes drift metrics with champion values."""
     client = MlflowClient()
     try:
         for model_name in ['regressor', 'classifier']:
@@ -513,7 +626,7 @@ async def init_champion_metrics():
                 CHAMPION_REGRESSOR_R2.set(r2)
                 CHAMPION_REGRESSOR_RESIDUAL_SKEWNESS.set(res_skew)
 
-                # Drift-Metriken starten auf Champion-Niveau
+                # Drift metrics start at champion level
                 DRIFT_REGRESSOR_RMSE.set(rmse)
                 DRIFT_MAE.set(mae)
                 DRIFT_REGRESSOR_R2.set(r2)
@@ -536,7 +649,7 @@ async def init_champion_metrics():
                 CHAMPION_CLASSIFIER_SPECIFICITY.set(spec)
                 CHAMPION_CLASSIFIER_CONFIDENCE_MEAN.set(conf_mean)
 
-                # Drift-Metriken starten auf Champion-Niveau
+                # Drift metrics start at champion level
                 DRIFT_CLASS_F1.set(f1)
                 DRIFT_CLASS_ROC_AUC.set(roc_auc)
                 DRIFT_CLASS_ACCURACY.set(acc)
@@ -545,7 +658,7 @@ async def init_champion_metrics():
                 DRIFT_CLASS_SPECIFICITY.set(spec)
                 DRIFT_CLASS_CONFIDENCE_MEAN.set(conf_mean)
 
-        # Champion-Modell-Info aus MLflow laden (damit das Panel sofort die richtigen Namen zeigt)
+        # Load champion model info from MLflow (so the panel immediately shows the correct names)
         CHAMPION_MODEL_INFO.clear()
         try:
             for model_name in ['regressor', 'classifier']:
@@ -553,7 +666,7 @@ async def init_champion_metrics():
                 version_str = f"{model_name}_v{mv.version}@champion"
                 CHAMPION_MODEL_INFO.labels(model=model_name, version=version_str).set(1)
         except Exception as e:
-            print(f"WARNUNG: Konnte Champion-Modell-Info nicht laden – {e}")
+            print(f"WARNING: Could not load champion model info – {e}")
 
         DRIFT_SCORE.set(0.05)
         RETRAIN_STATUS.set(1)
@@ -563,9 +676,12 @@ async def init_champion_metrics():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
+# --------------------------------------------------------------------------
+# HEALTH CHECK ENDPOINT
+# --------------------------------------------------------------------------
 @app.get("/health")
 def health_check():
+    """Health check: returns whether both models are loaded."""
     return {
         "regression_loaded": app.state.regression_pipeline is not None,
         "classification_loaded": app.state.classification_pipeline is not None,
