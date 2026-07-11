@@ -1,3 +1,24 @@
+# =============================================================================
+#  Dockerfile: FastAPI Service for Flight Delay Prediction
+# =============================================================================
+#
+#  Builds the API container with all Python dependencies.
+#  Exposes port 8000 for the Uvicorn server.
+#
+#  Usage:
+#    docker build -f docker/dockerfiles/api.Dockerfile -t flight-api .
+#    docker run -p 8000:8000 flight-api
+#
+#  The default CMD starts the Uvicorn server. In docker-compose, it can be
+#  overridden by the `command` section in compose.yml.
+#
+#  ─────────────────────────────────────────────────────────────────────────────
+#  Dependencies:
+#    - requirements.txt  (copied first for optimal Docker caching)
+#  ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+
+
 FROM python:3.11
 
 WORKDIR /app

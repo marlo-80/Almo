@@ -1,35 +1,11 @@
 #!/bin/bash
 #set -e
-
-# --------------------------------------------------------------------------
-# SCRIPT DOCSTRING
-# --------------------------------------------------------------------------
-# This script runs the COVID Data Drift demo, simulating monthly batch
-# predictions for flight delay data across 2020‑2022, detecting drift with
-# Prometheus and Grafana, and triggering model retraining when the drift
-# score exceeds a threshold.
-# --------------------------------------------------------------------------
-
 echo "=================================================================================="
 echo ""
 echo "                            COVID DATA DRIFT DEMO                                 "
 echo ""
 echo "=================================================================================="
 echo ""
-
-echo "This demo will show how model retrain is automatically triggered when production"
-echo "data deviates too much from training data."
-echo ""
-echo "Blues lines on the grafana's drift score panel will indicate the start of a month"
-echo "beginning with January 2020. The demo will make predictions for samples of the"
-echo "intra-covid dataset while Evidently calculates a drift score for those batches." 
-echo ""
-echo "In May 2020 the drift score will exceed a defined threshold of 0.6 and model"
-echo "retrain will be triggered."
-echo ""
-echo "=================================================================================="
-echo ""
-
 
 echo "Demo preparation starting... "
 docker compose -f docker/compose.yml stop simulator > /dev/null 2>&1
@@ -38,7 +14,7 @@ docker compose -f docker/compose.yml rm -f simulator > /dev/null 2>&1
 # --------------------------------------------------------------------------
 # LOAD GRAFANA API KEY
 # --------------------------------------------------------------------------
-# Read token from file (MUST exist)
+# Token aus Datei lesen (MUSS existieren)
 TOKEN_FILE="./docker/monitoring/grafana/grafana_token.txt"
 if [ ! -f "$TOKEN_FILE" ]; then
     echo "No Grafana token. Execute /docker/scripts/grafana_token_generation.sh from within docker."
@@ -57,13 +33,13 @@ HUGE_ROWS=1000000000
 TABLE_INTRA_COVID="dbt_staging.intra_covid_100k"
 
 # --------------------------------------------------------------------------
-# DETERMINISM: GLOBAL SEED FOR BATCH_INJECT & DRIFT_FLOW
+# Determinismus: globaler Seed für batch_inject & drift_flow
 # --------------------------------------------------------------------------
 export SEED=42
 export DRIFT_SEED=42
 
 # --------------------------------------------------------------------------
-# MONTHLY BASELINE (ADJUSTED FOR FAIR COMPARISONS)
+# Monatliche Baseline (angepasst an faire Vergleiche)
 # --------------------------------------------------------------------------
 get_baseline() {
     local month="$1"
@@ -84,7 +60,7 @@ get_baseline() {
     esac
 }
 
-# Thresholds
+# Schwellwerte
 MAX_LOAD=6.0                 # 1‑Minuten‑Load (8 Kerne → 6 ist 75%)
 MIN_FREE_MB=2000             # mindestens 2 GB freier RAM
 
@@ -112,7 +88,7 @@ wait_for_low_load() {
 }
 
 # --------------------------------------------------------------------------
-# TIME MEASUREMENT (ROBUST AGAINST LOCALE)
+# Zeitmessung (robust gegen Locale)
 # --------------------------------------------------------------------------
 timed_step() {
     local desc="$1"
@@ -126,8 +102,10 @@ timed_step() {
     echo "${dur}s"
 }
 
+
+
 # --------------------------------------------------------------------------
-# MAIN ORCHESTRATION FUNCTION: RUN_BATCH
+# Batch ausführen
 # --------------------------------------------------------------------------
 run_batch() {
     local label="$1"
@@ -145,14 +123,14 @@ run_batch() {
     echo ""
     echo "Preparing batch prediction..."
 
-    # 1. Set baseline
+    # 1. Baseline setzen
     timed_step "Creating baseline..." docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/baseline" \
       -H "Content-Type: application/json" -d "{\"value\": $baseline}" > /dev/null 2>&1
     sleep 2
 
-    # 2. Grafana annotation
+    # 2. Grafana-Annotation
     if [ -n "$GRAFANA_API_KEY" ]; then
-        # FACT-BASED FIX: Timestamp is pre‑calculated as a pure number on the host
+        # FAKTENBASIERTER FIX: Zeitstempel wird VORAB als reine Zahl auf dem Host berechnet
         local current_timestamp=$(date +%s)000
 
         timed_step "Creating Grafana annotations" docker compose -f docker/compose.yml exec api curl -s -X POST "http://grafana:3000/api/annotations" \
@@ -174,13 +152,13 @@ run_batch() {
     echo "...batch preparations finished"
     echo ""   
     echo "Batch prediction started..."
-    # 3. Inject batch data (whole month, deterministic)
+    # 3. Batch-Daten injizieren (ganzer Monat, deterministisch)
     wait_for_low_load "Batch-Inject Monat $month"
     timed_step "Batch-Inject ($HUGE_ROWS Zeilen)" docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e SEED="$SEED" api python docker/scripts/batch_inject.py \
       "$start" "$end" "$HUGE_ROWS" "$TABLE_INTRA_COVID" > /dev/null 2>&1
     sleep 2
 
-    # 4. Drift flow with month parameter and seed (syntax fix)
+    # 4. Drift-Flow mit Monatsangabe und Seed (Syntax-Fix)
     wait_for_low_load "Drift-Flow Monat $month"
     timed_step "Drift-Flow" docker compose -f docker/compose.yml exec \
       -e PYTHONPATH=/app \
@@ -189,14 +167,14 @@ run_batch() {
       -e DRIFT_SEED="$DRIFT_SEED" \
       -e PREFECT_LOGGING_LEVEL=WARNING \
       api python flows/drift_flow.py > /dev/null 2>&1
-    # Important: Prometheus needs a moment to scrape the new metrics
+    # Wichtig: Prometheus braucht einen Moment, um die neuen Metriken zu scrapen
     sleep 3
     echo "...batch predictions finished"
 
     echo ""
     echo "Drift score calculation starting..."
 
-    # 5. Retrieve current drift score from Prometheus (safe JSON parser via heredoc)
+    # 5. Aktuellen Drift Score von Prometheus abrufen (Sicherer JSON-Parser via Heredoc)
     local raw_json
     raw_json=$(curl -s "$PROMETHEUS_URL/api/v1/query?query=data_drift_score")
     
@@ -212,21 +190,21 @@ EOF
     echo "...drift score calculation finished"
     echo ""
 
+
     
     if [ -n "$DRIFT_SCORE" ]; then
         echo "Drift Score: $DRIFT_SCORE"
         if (( $(echo "$DRIFT_SCORE > 0.5" | bc -l) )); then
-            echo "!!! DRIFT ALARM !!!"
-            echo "Retraining initiated..."
+            echo "Drift-Alarm! Retraining initiated..."
             docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 \
                 -e PREFECT_LOGGING_LEVEL=ERROR \
                 api python flows/train_flow.py DRIFT_RETRAIN_REG > /dev/null 2>&1
             docker compose -f docker/compose.yml exec -e PYTHONPATH=/app -e PYTHONUNBUFFERED=1 \
                 -e PREFECT_LOGGING_LEVEL=ERROR \
                 api python flows/train_flow.py DRIFT_RETRAIN_CLASS > /dev/null 2>&1
-            echo "... retrain finished"
-            echo ""
+            echo "... retrain finished"    
         fi
+
 
     else
         echo "No drift score!!!"
@@ -234,7 +212,7 @@ EOF
 
     echo "Demo for month $month: finished"
 
-    # ---------- FIXED PAUSE CHECK AT END OF MONTH ----------
+    # ---------- REPARIERTE PAUSEN-PRÜFUNG AM ENDE DES MONATS ----------
     local PAUSE_KEY=""
     read -t 0.1 -n 1 PAUSE_KEY 2>/dev/null || true
     if [ "$PAUSE_KEY" = "p" ]; then
@@ -249,60 +227,63 @@ EOF
 }
 
 # ===================================================================================================================
-# MAIN PROGRAM: INITIALIZATION AND SETUP
+# Hauptprogramm
 # ===================================================================================================================
 
-# echo "Set dashboard refresh to 1s …"
+# echo "🔄 Setze Dashboard-Refresh auf 1s …"
 curl -s -X PATCH "$GRAFANA_URL/api/dashboards/uid/$DASHBOARD_UID" \
   -H "Authorization: Bearer $GRAFANA_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"dashboard": {"refresh": "1s"}}' > /dev/null
 
-# echo "Delete old Prometheus data …"
+# echo "🧹 Lösche alte Prometheus-Daten …"
 docker compose -f docker/compose.yml stop prometheus > /dev/null 2>&1
 docker compose -f docker/compose.yml rm -f prometheus > /dev/null 2>&1
 docker compose -f docker/compose.yml up -d prometheus > /dev/null 2>&1
 
-# --- Reset dbt_staging.retrain table ---
+# --- NEU: Tabelle dbt_staging.retrain zurücksetzen ---
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'DROP TABLE IF EXISTS dbt_staging."retrain";' > /dev/null 2>&1
+
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'CREATE TABLE dbt_staging.retrain AS TABLE dbt_staging."pre_covid_100k";' > /dev/null 2>&1
 
-# Load champion metrics from MLflow and set initially
+# Champion-Metriken aus MLflow laden und initial setzen
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/init-champion-metrics" \
   -H "Content-Type: application/json" > /dev/null
 
-# Set baseline to default and initialize dynamic baseline
+# Baseline auf Standardwert und dynamische Baseline initial setzen
 #docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/baseline" \
 #  -H "Content-Type: application/json" -d '{"value": 0.15}' > /dev/null
 
 docker compose -f docker/compose.yml exec api curl -s -X POST http://api:8000/admin/drift-metrics -H "Content-Type: application/json" -d '{"drift_score": 0.15}' > /dev/null 2>&1  
 
-# Reset retrain status and alarm
+# Retrain-Status und Alarm zurücksetzen
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/retrain-status" \
   -H "Content-Type: application/json" -d '{"new_champion": 1}' > /dev/null
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/drift-alarm" \
   -H "Content-Type: application/json" -d '{"active": 0}' > /dev/null
 
-# Remove old Grafana annotations (safe radical solution without loops)
-# echo "Delete Grafana annotations …"
+# Alte Grafana-Annotationen entfernen (Sichere Radikallösung ohne Schleifen)
+# echo "🧹 Bereinige Grafana-Annotationen …"
 docker compose -f docker/compose.yml exec api curl -s -X DELETE \
   -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"tags": ["batch"]}' \
   "http://grafana:3000/api/annotations" > /dev/null
 
-# echo "Done."
+# echo "Erledigt."
 
-# echo "Truncate table api.predictions …"
+
+# echo "Leere Tabelle api.predictions …"
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db \
   -c "TRUNCATE TABLE api.predictions RESTART IDENTITY;" > /dev/null
 
-# Set prediction counter to 0 so panel displays correctly immediately
+# Vorhersage-Zähler auf 0 setzen, damit das Panel sofort korrekt anzeigt
 docker compose -f docker/compose.yml exec api curl -s -X POST "$API_URL/admin/data-stats" \
   -H "Content-Type: application/json" > /dev/null  
 
-# echo "Set initial baseline to 0.18 …"
+# echo "Setze initiale Baseline auf 0.18 …"
 docker compose -f docker/compose.yml exec api curl -s -X POST http://api:8000/admin/drift-metrics -H "Content-Type: application/json" -d '{"drift_score": 0.18}' > /dev/null 2>&1  
+
 
 curl -s -X POST http://localhost:8000/admin/retrain-status -H "Content-Type: application/json" -d '{"new_champion": 1}' > /dev/null 2>&1
 curl -X POST http://localhost:8000/admin/reload-model > /dev/null 2>&1
@@ -313,13 +294,10 @@ read -p "Press [ENTER] to start demo..."
 
 echo ""
 
-# --------------------------------------------------------------------------
-# EXECUTION LOOP: MONTHLY BATCHES 2020–2022
-# --------------------------------------------------------------------------
 
 # --- 2020 ---
 run_batch "January 2020"     "2020-01-01" "2020-02-01" 1
-run_batch "February 2020"    "2020-02-01" "2020-03-01" 2
+run_batch "Febuary 2020"    "2020-02-01" "2020-03-01" 2
 run_batch "March 2020"       "2020-03-01" "2020-04-01" 3
 run_batch "April 2020"      "2020-04-01" "2020-05-01" 4
 run_batch "May 2020"        "2020-05-01" "2020-06-01" 5

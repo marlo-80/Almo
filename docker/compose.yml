@@ -1,6 +1,107 @@
+# =============================================================================
+#  Docker Compose Configuration – Flight Delay Prediction Platform
+# =============================================================================
+#
+#  This Compose file orchestrates the entire ML engineering pipeline for
+#  flight delay prediction. It defines and connects all core services:
+#
+#    ┌─────────────────────────────────────────────────────────────────────┐
+#    │  API (FastAPI)      → Serves predictions, exposes metrics          │
+#    │  PostgreSQL         → Central data store (raw data + metadata)     │
+#    │  MLflow             → Experiment tracking & model registry         │
+#    │  Prefect            → Workflow orchestration (training & drift)    │
+#    │  Prometheus         → Metrics collection & storage                 │
+#    │  Grafana            → Dashboards & monitoring visualization        │
+#    │  Simulator          → (optional) Generates live API traffic        │
+#    │  Bootstrap          → One‑time data import & initialization        │
+#    └─────────────────────────────────────────────────────────────────────┘
+#
+#  All services communicate over the `mle_network` bridge network.
+#  Persistent data is stored in named Docker volumes.
+#
+#  --------------------------------------------------------------------------
+#  Quick Start
+#  --------------------------------------------------------------------------
+#
+#  1. Start all services (without simulator):
+#       docker compose -f docker/compose.yml up -d
+#
+#  2. Run data import (one‑time, with bootstrap):
+#       docker compose -f docker/compose.yml --profile init up bootstrap
+#
+#  3. Run the traffic simulator (optional, requires trained models):
+#       docker compose -f docker/compose.yml --profile manual up simulator
+#
+#  4. View logs:
+#       docker compose -f docker/compose.yml logs -f
+#
+#  --------------------------------------------------------------------------
+#  Services Overview
+#  --------------------------------------------------------------------------
+#
+#  Service          Port (Host)  Description
+#  --------------  ------------  --------------------------------------------
+#  api              8000         FastAPI prediction service
+#  grafana          3000         Monitoring dashboards (login: admin/admin)
+#  mlflow           5001         Experiment tracking UI
+#  prefect          4200         Workflow orchestration UI
+#  prometheus       9090         Metrics scraping UI
+#  postgres         5432         PostgreSQL database (fastapi_db, mlflow, prefect)
+#  simulator        (none)       Optional traffic generator (profile: manual)
+#  bootstrap        (none)       One‑time data import (profile: init)
+#
+#  --------------------------------------------------------------------------
+#  Volumes
+#  --------------------------------------------------------------------------
+#
+#  Volume           Purpose
+#  ---------------- --------------------------------------------------------
+#  postgres_data    Database storage (persistent across restarts)
+#  grafana_data     Grafana configuration (dashboards, data sources, etc.)
+#
+#  --------------------------------------------------------------------------
+#  Profiles
+#  --------------------------------------------------------------------------
+#
+#  Profile   Services          Purpose
+#  --------  ----------------  ---------------------------------------------
+#  (default) api, grafana,      Main stack for production‑like operation
+#            mlflow, prefect,
+#            prometheus, postgres
+#  init      bootstrap         One‑time data import (run once after first start)
+#  manual    simulator         Manual traffic simulation (requires trained models)
+#
+#  --------------------------------------------------------------------------
+#  Environment Variables
+#  --------------------------------------------------------------------------
+#
+#  The following environment variables are used across services:
+#
+#  Variable               Default     Purpose
+#  ---------------------  ----------  ----------------------------------------
+#  POSTGRES_USER          testuser    PostgreSQL username
+#  POSTGRES_PASSWORD      testuser    PostgreSQL password
+#  MODEL_NAME             test_name   Default model name (API)
+#  MODEL_ALIAS            champion    Default model alias (API)
+#
+#  These can be overridden via a `.env` file in the project root.
+#
+#  --------------------------------------------------------------------------
+#  Notes
+#  --------------------------------------------------------------------------
+#  - The API container is built from `docker/dockerfiles/dockerfile_fastAPI`.
+#  - The bootstrap container uses the same image and runs a one‑time script.
+#  - PostgreSQL is configured with performance optimizations for bulk import
+#    (shared_buffers, synchronous_commit=off, etc.).
+#  - Grafana is pre‑provisioned with dashboards and data sources from
+#    `./monitoring/grafana/provisioning/`.
+#  - Prometheus scrapes the API every 1 second (configured in
+#    `./monitoring/prometheus.yml`).
+# =============================================================================
+
 services:
   # ---------------------------------------------------------------------------
-  # API – FastAPI mit Uvicorn, einziger HTTP‑Entrypoint für die Anwendung
+  # API – FastAPI with Uvicorn, single HTTP-entrypoint for all services
   # ---------------------------------------------------------------------------
   api:
     build:
@@ -25,7 +126,7 @@ services:
     restart: unless-stopped       
 
   # ---------------------------------------------------------------------------
-  # Grafana – Dashboards für Prometheus-Metriken
+  # Grafana – Dashboards for Prometheus
   # ---------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:10.0.1          # 13.0.1 existiert nicht
@@ -35,7 +136,7 @@ services:
       - "3000:3000"
     environment:
       - GF_PROVISIONING_ALLOW_OVERRIDE=true
-      # WICHTIG: Doppelter Unterstrich zwischen DASHBOARDS und MIN_REFRESH_INTERVAL
+      # IMPORTANT: Double dash between DASHBOARDS and MIN_REFRESH_INTERVAL
       - GF_DASHBOARDS__MIN_REFRESH_INTERVAL=1s
       - GF_LIVE_ALLOWED_ORIGINS=*
  
@@ -44,7 +145,6 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ./monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - grafana_data:/var/lib/grafana
-      #- ./files/grafana:/etc/grafana
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
       interval: 10s
@@ -57,7 +157,7 @@ services:
 
 
   # ---------------------------------------------------------------------------
-  # MLflow – Tracking Server (Pfade bleiben unverändert)
+  # MLflow – Model Server
   # ---------------------------------------------------------------------------
   mlflow:
     image: python:3.11-slim
@@ -87,7 +187,7 @@ services:
     restart: unless-stopped 
 
   # ---------------------------------------------------------------------------
-  # Prefect – Orchestrierung
+  # Prefect
   # ---------------------------------------------------------------------------
   prefect:
     image: prefecthq/prefect:3.6.25-python3.11
@@ -115,8 +215,6 @@ services:
     image: prom/prometheus:v3.7.3
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
-  #global:
-   # scrape_interval: 1s  
     depends_on:
       - api
     ports:
@@ -129,8 +227,7 @@ services:
 
 
   # ---------------------------------------------------------------------------
-  # PostgreSQL – einziger Datenbankdienst, erzeugt mehrere Datenbanken per
-  # init-Skript. Alle anderen Dienste (MLflow, Prefect, API) hängen von ihm ab.
+  # PostgreSQL – will create several databases on init
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:17
@@ -200,13 +297,12 @@ services:
     networks:
       - mle_network
     volumes:
-      - ../:/app   # damit das Skript in docker/scripts/ gefunden wird
+      - ../:/app   
     command: python docker/scripts/bootstrap_db.py
     restart: "no"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-testuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-testuser}
-    # Optionale Profile: bootstrap läuft nur, wenn du `--profile init` angibst
     profiles:
       - init
 
@@ -217,7 +313,7 @@ services:
 
 
 # ---------------------------------------------------------------------------
-# Infrastruktur
+# Infrastructure
 # ---------------------------------------------------------------------------
 networks:
   mle_network:

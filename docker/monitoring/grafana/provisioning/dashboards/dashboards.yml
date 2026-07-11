@@ -1,3 +1,51 @@
+# =============================================================================
+#  Grafana Dashboard Provisioning Configuration
+# =============================================================================
+#
+#  This file tells Grafana where to load dashboards from the local filesystem.
+#  It is part of Grafana's provisioning system, which allows dashboards to be
+#  managed as code and automatically loaded at startup.
+#
+#  ----------------------------------------------------------------------------
+#  How It Works
+#  ----------------------------------------------------------------------------
+#  - Grafana scans the directory specified in `options.path` every
+#    `updateIntervalSeconds` (10s) for new or changed dashboard JSON files.
+#  - All dashboards in that folder are automatically imported into Grafana.
+#  - The `allowUiUpdates: true` setting permits saving changes from within
+#    the Grafana UI (useful for testing, but can be set to `false` for strict
+#    infrastructure-as-code setups).
+#
+#  ----------------------------------------------------------------------------
+#  Mount Path (Container)
+#  ----------------------------------------------------------------------------
+#  In the Grafana container, this file is mounted to:
+#    /etc/grafana/provisioning/dashboards/dashboards.yml
+#
+#  The actual dashboard JSON files are mounted from:
+#    ./monitoring/grafana/dashboards/  →  /var/lib/grafana/dashboards/
+#
+#  ----------------------------------------------------------------------------
+#  Dashboard Files (Example)
+#  ----------------------------------------------------------------------------
+#  - flight-delay.json        → UID: "flight-delay", Title: "Flight Delay"
+#
+#  ----------------------------------------------------------------------------
+#  Usage
+#  ----------------------------------------------------------------------------
+#  1. Place dashboard JSON files in:  ./monitoring/grafana/dashboards/
+#  2. Restart Grafana:
+#       docker compose restart grafana
+#  3. Verify in Grafana UI → Dashboards → Browse
+#
+#  ----------------------------------------------------------------------------
+#  Best Practices
+#  ----------------------------------------------------------------------------
+#  - Keep dashboard JSON files under version control.
+#  - Use `version: 1` in the JSON to trigger provisioning updates.
+#  - For production, set `allowUiUpdates: false` to prevent drift.
+# =============================================================================
+
 apiVersion: 1
 
 providers:
