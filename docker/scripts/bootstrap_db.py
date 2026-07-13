@@ -104,7 +104,8 @@ def ensure_data_downloaded():
         raise RuntimeError("ZIP-Datei nicht gefunden.")
 
     print(f"📂 Entpacke {zip_file}...")
-    subprocess.run(["unzip", "-o", zip_file, "-d", DATA_DIR], check=True)
+    #subprocess.run(["unzip", "-o", zip_file, "-d", DATA_DIR], check=True)
+    subprocess.run(["unzip", "-o", zip_file, "*.csv", "-x", "*/*", "-d", DATA_DIR], check=True)
     os.remove(zip_file)
     print("✅ Daten bereit.")
 
