@@ -33,6 +33,20 @@ echo ""
 echo ""
 
 
+
+
+#echo "=============================================================================="
+#echo "                               Data Import                                    "
+#echo "=============================================================================="
+#echo "Downloading and importing flight data..."
+#echo ""
+#docker compose -f docker/compose.yml run --rm api python docker/scripts/import_data.py
+#echo ""
+#echo "...Data import finished"
+#echo ""
+#echo ""
+
+
 echo "=============================================================================="
 echo "                           Database Initialization                            "
 echo "=============================================================================="
@@ -58,7 +72,7 @@ echo "                             DBT Model Creations                          
 echo "=============================================================================="
 echo "DBT model creation started..."
 echo ""
-docker compose -f docker/compose.yml exec -T api dbt run --project-dir /app/dbt --profiles-dir /app/dbt
+docker compose -f docker/compose.yml exec api dbt run --project-dir /app/dbt --profiles-dir /app/dbt
 echo ""
 echo "...DBT model creation finished"
 

@@ -18,3 +18,5 @@ python-dotenv==1.2.2
 seaborn==0.13.2
 scikit-learn==1.8.0
 uvicorn[standard]==0.44.0
+kaggle>=0.4.3
+stream-unzip>=0.0.101

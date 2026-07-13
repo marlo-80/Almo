@@ -118,6 +118,7 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ../:/app
+      - ../flight_data:/app/flight_data
     depends_on:
       postgres:
         condition: service_healthy

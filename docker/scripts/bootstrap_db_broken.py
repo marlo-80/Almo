@@ -269,10 +269,10 @@ def import_csv_to_db() -> int:
 # --------------------------------------------------------------------------
 # GRAFANA TOKEN GENERATION
 # --------------------------------------------------------------------------
-def grafana_token_generation():
+def generate_grafana_token():
     """Generiert den Grafana API-Token (einmalig)."""
     print("Generating Grafana API token...")
-    token_script = "/app/docker/scripts/grafana_token_generation.sh"
+    token_script = "/app/docker/scripts/generate_grafana_token.sh"
     if os.path.exists(token_script):
         try:
             result = subprocess.run(
@@ -343,7 +343,7 @@ def bootstrap():
         print("✅ Index auf FlightDate erstellt.")
 
         # 5. Grafana-Token generieren
-        grafana_token_generation()
+        generate_grafana_token()
 
     # 6. CSV-Dateien löschen
     csv_files = glob.glob(os.path.join("./flight_data", "*.csv"))

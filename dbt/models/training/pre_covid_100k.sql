@@ -1,8 +1,10 @@
---dbt/models/training/pre_covid_big.sql
 {{
   config(
     materialized = 'table',
-    pre_hook = "SELECT setseed(0.42);",
+    pre_hook = [
+      "SELECT setseed(0.42);",
+      "SET work_mem = '256MB';" 
+    ],
     indexes = [
       {'columns': ['flight_date'], 'type': 'btree'}
     ]
