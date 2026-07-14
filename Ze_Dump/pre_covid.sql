@@ -3,6 +3,10 @@
   config(
     materialized = 'table',
     pre_hook = "SELECT setseed(0.42);",
+    post_hook = [
+        "CHECKPOINT;",
+        "ANALYZE {{ this }};"
+    ],
     indexes = [
       {'columns': ['flight_date'], 'type': 'btree'}
     ]

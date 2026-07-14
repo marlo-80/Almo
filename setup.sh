@@ -67,6 +67,21 @@ echo "...database verified"
 echo ""
 echo ""
 
+
+
+echo "=============================================================================="
+echo "                            Restarting PostgreSQL                             "
+echo "=============================================================================="
+echo "Restarting PostgreSQL..."
+echo ""
+docker compose -f docker/compose.yml restart postgres
+echo ""
+echo "...Postgre SQL restarted"
+
+echo ""
+echo ""
+
+
 echo "=============================================================================="
 echo "                             DBT Model Creations                              "
 echo "=============================================================================="
@@ -80,9 +95,9 @@ echo ""
 
 echo "DBT model verification started..."
 echo ""
-docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging."pre_covid";'
+#docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging."pre_covid";'
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging."pre_covid_100k";'
-docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging."intra_covid";'
+#docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging."intra_covid";'
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging."intra_covid_100k";'
 docker compose -f docker/compose.yml exec postgres psql -U testuser -d fastapi_db -c 'SELECT COUNT(*), MIN(flight_date), MAX(flight_date) FROM dbt_staging."retrain";'
 

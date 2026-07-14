@@ -55,6 +55,9 @@ import pandas as pd
 import psycopg2
 from sqlalchemy import create_engine, text
 
+import gc
+
+
 # --------------------------------------------------------------------------
 # CONFIGURATION
 # --------------------------------------------------------------------------
@@ -354,9 +357,42 @@ def bootstrap():
             print(f"🗑️  Gelöscht: {f}")
         except Exception as e:
             print(f"⚠️ Konnte {f} nicht löschen: {e}")
+            
+            
+            
+
+
+
+    # --------------------------------------------------------------------------
+    # FINAL CLEANUP: CHECKPOINT + VACUUM ANALYZE
+    # --------------------------------------------------------------------------
+    if total_rows > 0:
+        print("🔄 Running CHECKPOINT to flush WAL to disk...")
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text('CHECKPOINT;'))
+        print("✅ CHECKPOINT completed.")
+
+        print("🔄 Running VACUUM ANALYZE to free space and update statistics...")
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text('VACUUM ANALYZE raw.flights;'))
+        print("✅ VACUUM ANALYZE completed.")
+        
+        # Zuerst große Python-Objekte im RAM freigeben (falls du Variablen wie 'df' hast, hier vorher 'del df' aufrufen!)
+        gc.collect() 
+        print("✅ Python Garbage Collection completed.")
+        
+        print("⏳ Warte 45 Sekunden, damit die Festplatten-I/O abklingt...")
+        time.sleep(45)
+        
+        print("🧹 Zwinge WSL2, den Datei-Cache im RAM zu leeren...")
+        # Nutzt sh -c, um die Pipe korrekt an den Linux-Kernel zu übergeben
+        os.system("sudo sync && sync && echo 3 | sudo tee /proc/sys/vm/drop_caches")
+        print("✅ WSL2 Cache cleared.")
+        
+    else:
+        print("No data imported – skipping cleanup.")
 
     print(f"✅ Bootstrap abgeschlossen. {total_rows} Zeilen in raw.flights.")
-
 
 if __name__ == "__main__":
     bootstrap()

@@ -1,7 +1,10 @@
 {{
   config(
     materialized = 'table',
-    post_hook = "CHECKPOINT;"
+    post_hook = [
+        "CHECKPOINT;",
+        "ANALYZE {{ this }};"
+    ]
   )
 }}
 

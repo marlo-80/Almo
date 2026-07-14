@@ -242,7 +242,7 @@ services:
       -c synchronous_commit=off
       -c max_wal_size=8GB
       -c checkpoint_timeout=30min
-      -c work_mem=512MB
+      -c work_mem=128MB
       -c maintenance_work_mem=2GB
     ports:
       - "5432:5432"
