@@ -33,20 +33,6 @@ echo ""
 echo ""
 
 
-
-
-#echo "=============================================================================="
-#echo "                               Data Import                                    "
-#echo "=============================================================================="
-#echo "Downloading and importing flight data..."
-#echo ""
-#docker compose -f docker/compose.yml run --rm api python docker/scripts/import_data.py
-#echo ""
-#echo "...Data import finished"
-#echo ""
-#echo ""
-
-
 echo "=============================================================================="
 echo "                           Database Initialization                            "
 echo "=============================================================================="

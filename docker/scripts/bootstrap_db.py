@@ -74,24 +74,24 @@ DATA_DIR = "/app/flight_data"
 # DATA DOWNLOAD (Kaggle)
 # --------------------------------------------------------------------------
 def ensure_data_downloaded():
-    """Lädt und entpackt die Kaggle-Daten, falls sie nicht existieren."""
+    """Loads data if not available on disk"""
     os.makedirs(DATA_DIR, exist_ok=True)
 
     # Prüfen, ob bereits CSVs vorhanden sind
     csv_files = [f for f in os.listdir(DATA_DIR) if f.startswith("Combined_Flights_") and f.endswith(".csv")]
     if csv_files:
-        print(f"✅ CSVs bereits vorhanden ({len(csv_files)} Dateien). Überspringe Download.")
+        print(f"{len(csv_files)} files on disk. Skipping download.")
         return
 
     # Kaggle-CLI installieren (falls nicht vorhanden)
     try:
         subprocess.run(["kaggle", "--version"], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("📦 Installiere Kaggle-CLI...")
+        print("Installing Kaggle-CLI...")
         subprocess.run([sys.executable, "-m", "pip", "install", "kaggle"], check=True)
 
     # Download
-    print("📥 Lade Dataset von Kaggle herunter...")
+    print("Load data from Kaggle...")
     subprocess.run([
         "kaggle", "datasets", "download", "-d",
         "robikscube/flight-delay-dataset-20182022", "-p", DATA_DIR
@@ -106,11 +106,11 @@ def ensure_data_downloaded():
     if not zip_file:
         raise RuntimeError("ZIP-Datei nicht gefunden.")
 
-    print(f"📂 Entpacke {zip_file}...")
+    print(f"Extract {zip_file}...")
     #subprocess.run(["unzip", "-o", zip_file, "-d", DATA_DIR], check=True)
     subprocess.run(["unzip", "-o", zip_file, "*.csv", "-x", "*/*", "-d", DATA_DIR], check=True)
     os.remove(zip_file)
-    print("✅ Daten bereit.")
+    print("Files ready")
 
 
 # --------------------------------------------------------------------------
@@ -118,10 +118,10 @@ def ensure_data_downloaded():
 # --------------------------------------------------------------------------
 def import_csv_to_db() -> int:
     """
-    Importiert alle CSV-Dateien performant über eine Staging-Tabelle.
+    Imports all csv files using a staging table.
 
     Returns:
-        int: Anzahl der importierten Zeilen.
+        int: Number of imported rows.
     """
     ensure_data_downloaded()
 
@@ -129,12 +129,12 @@ def import_csv_to_db() -> int:
     conn.autocommit = True
     cur = conn.cursor()
 
-    # Schemas vorbereiten
+    # Prepare schemas
     cur.execute("CREATE SCHEMA IF NOT EXISTS raw;")
     cur.execute("DROP TABLE IF EXISTS raw.flights CASCADE;")
     cur.execute("DROP TABLE IF EXISTS raw.flights_staging CASCADE;")
 
-    # 1. Staging-Tabelle erstellen (nimmt alle Text-Formate auf)
+    # 1. Create staging table
     cur.execute("""
         CREATE TABLE raw.flights_staging (
             "Year" TEXT, "Quarter" TEXT, "Month" TEXT, "DayofMonth" TEXT, "DayOfWeek" TEXT, "FlightDate" TEXT,
@@ -150,7 +150,7 @@ def import_csv_to_db() -> int:
             "Cancelled" TEXT, "Diverted" TEXT
         );
     """)
-    print("✅ Staging-Tabelle erstellt.")
+    print("Staging table created")
 
     target_columns = [
         "Year", "Quarter", "Month", "DayofMonth", "DayOfWeek", "FlightDate",
@@ -170,15 +170,15 @@ def import_csv_to_db() -> int:
         if re.match(r"Combined_Flights_\d{4}\.csv", f)
     ])
     if not csv_files:
-        print("⚠️ Keine passenden CSV-Dateien gefunden.")
+        print("No CSV files found")
         cur.close()
         conn.close()
         return 0
 
-    # 2. Daten in die Staging-Tabelle streamen
+    # 2. Stream files to staging table
     total_rows = 0
     for file in csv_files:
-        print(f"📄 Streame {file} in Staging...")
+        print(f"Streaming {file} to staging...")
         file_path = os.path.join(DATA_DIR, file)
 
         chunk_iter = pd.read_csv(
@@ -203,9 +203,9 @@ def import_csv_to_db() -> int:
             cur.copy_expert(sql, output)
             total_rows += len(chunk)
 
-    print(f"✅ {total_rows} Zeilen erfolgreich im Staging zwischengespeichert.")
+    print(f"{total_rows} have been saved to staging table.")
 
-    # 3. Finale Tabelle mit dbt-kompatiblen Datentypen
+    # 3. Final table with dbt conform data types
     cur.execute("""
         CREATE TABLE raw.flights (
             "Year" INT, "Quarter" INT, "Month" INT, "DayofMonth" INT, "DayOfWeek" INT, "FlightDate" DATE,
@@ -221,10 +221,10 @@ def import_csv_to_db() -> int:
             "Cancelled" BOOLEAN, "Diverted" BOOLEAN
         );
     """)
-    print("✅ Finale Tabelle raw.flights mit dbt-kompatiblen Datentypen erstellt.")
+    print("Finale Tabelle raw.flights mit dbt-kompatiblen Datentypen erstellt.")
 
-    # 4. Transformation und Übertragung
-    print("🔄 Transformiere und kopiere Daten in finale Tabelle...")
+    # 4. Transformation and Transfer
+    print("Transformiere und kopiere Daten in finale Tabelle...")
     cur.execute("""
         INSERT INTO raw.flights (
             "Year", "Quarter", "Month", "DayofMonth", "DayOfWeek", "FlightDate",
@@ -261,12 +261,12 @@ def import_csv_to_db() -> int:
         FROM raw.flights_staging;
     """)
 
-    # Staging aufräumen
+    # Clean staging table
     cur.execute("DROP TABLE IF EXISTS raw.flights_staging;")
     cur.close()
     conn.close()
 
-    print(f"🎉 FERTIG! {total_rows} Zeilen in raw.flights importiert.")
+    print(f"READY! {total_rows} rows have been imported to raw.flights")
     return total_rows
 
 
@@ -274,7 +274,7 @@ def import_csv_to_db() -> int:
 # GRAFANA TOKEN GENERATION
 # --------------------------------------------------------------------------
 def grafana_token_generation():
-    """Generiert den Grafana API-Token (einmalig)."""
+    """Generates Grafana API token"""
     print("Generating Grafana API token...")
     token_script = "/app/docker/scripts/grafana_token_generation.sh"
     if os.path.exists(token_script):
@@ -286,24 +286,24 @@ def grafana_token_generation():
                 timeout=120
             )
             if result.returncode == 0:
-                print("✅ Grafana token generated successfully.")
+                print("Grafana token generated successfully.")
             else:
-                print(f"⚠️ Token generation failed (exit {result.returncode}):")
+                print(f"Token generation failed (exit {result.returncode}):")
                 print(result.stderr)
         except Exception as e:
-            print(f"⚠️ Token generation error: {e}")
+            print(f"Token generation error: {e}")
     else:
-        print(f"⚠️ Token script not found: {token_script}")
+        print(f"Token script not found: {token_script}")
 
 
 # --------------------------------------------------------------------------
 # MAIN BOOTSTRAP
 # --------------------------------------------------------------------------
 def bootstrap():
-    """Hauptfunktion: Initialisiert die Datenbank und importiert die Daten."""
+    """Main function: Initializes data base and imports data."""
     engine = create_engine(DB_URI)
 
-    # 1. Schema api und Tabelle api.predictions erstellen
+    # 1. Create api schema and api.predictions
     with engine.connect() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS api;"))
         conn.execute(text("""
@@ -322,7 +322,7 @@ def bootstrap():
         """))
         conn.commit()
 
-    # 2. Prüfen, ob raw.flights bereits Daten enthält
+    # 2. Check for data in raw.flights
     with engine.connect() as conn:
         result = conn.execute(text(
             "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'raw' AND table_name = 'flights')"
@@ -333,30 +333,30 @@ def bootstrap():
         with engine.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM raw.flights")).scalar()
             if count > 0:
-                print(f"✅ Tabelle raw.flights enthält bereits {count} Zeilen – Import übersprungen.")
+                print(f"raw.flights contains data. Download skipped.")
                 return
 
-    # 3. Daten importieren
+    # 3. Import data
     total_rows = import_csv_to_db()
 
-    # 4. Index erstellen (falls Daten importiert wurden)
+    # 4. Create index if data were imported
     if total_rows > 0:
         with engine.connect() as conn:
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_flight_date ON raw.flights ("FlightDate");'))
             conn.commit()
-        print("✅ Index auf FlightDate erstellt.")
+        print("Index auf FlightDate erstellt.")
 
-        # 5. Grafana-Token generieren
+        # 5. Create Grafana token
         grafana_token_generation()
 
-    # 6. CSV-Dateien löschen
+    # 6. Delete CSV files
     csv_files = glob.glob(os.path.join("./flight_data", "*.csv"))
     for f in csv_files:
         try:
             os.remove(f)
-            print(f"🗑️  Gelöscht: {f}")
+            print(f"Deleted: {f}")
         except Exception as e:
-            print(f"⚠️ Konnte {f} nicht löschen: {e}")
+            print(f"Deletion of {f} failed: {e}")
             
             
             
@@ -367,32 +367,40 @@ def bootstrap():
     # FINAL CLEANUP: CHECKPOINT + VACUUM ANALYZE
     # --------------------------------------------------------------------------
     if total_rows > 0:
-        print("🔄 Running CHECKPOINT to flush WAL to disk...")
+        print("Running CHECKPOINT to flush WAL to disk...")
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(text('CHECKPOINT;'))
-        print("✅ CHECKPOINT completed.")
+        print("...CHECKPOINT completed")
 
-        print("🔄 Running VACUUM ANALYZE to free space and update statistics...")
+        print("")
+
+        print("Running VACUUM ANALYZE to free space and update statistics...")
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(text('VACUUM ANALYZE raw.flights;'))
-        print("✅ VACUUM ANALYZE completed.")
+        print("...VACUUM ANALYZE completed.")
+
+
+        print("")
         
-        # Zuerst große Python-Objekte im RAM freigeben (falls du Variablen wie 'df' hast, hier vorher 'del df' aufrufen!)
+        # Remove python objects from RAM)
+        print("Delete Python garbage...")
         gc.collect() 
-        print("✅ Python Garbage Collection completed.")
-        
-        print("⏳ Warte 45 Sekunden, damit die Festplatten-I/O abklingt...")
+        print("...Python garbage deleted")
+
+
+        print("I/O cooldown stating...")
         time.sleep(45)
-        
-        print("🧹 Zwinge WSL2, den Datei-Cache im RAM zu leeren...")
+        print("...I/O cooldown finished")
+
+        print("Delete WSL2 cache if...")
         # Nutzt sh -c, um die Pipe korrekt an den Linux-Kernel zu übergeben
         os.system("sudo sync && sync && echo 3 | sudo tee /proc/sys/vm/drop_caches")
-        print("✅ WSL2 Cache cleared.")
+        print("WSL2 Cache deleted")
         
     else:
         print("No data imported – skipping cleanup.")
 
-    print(f"✅ Bootstrap abgeschlossen. {total_rows} Zeilen in raw.flights.")
+    print(f"Bootstrap finished. raw.flights contains {total_rows} rows")
 
 if __name__ == "__main__":
     bootstrap()

@@ -69,48 +69,50 @@ import time
 
 def load_from_kaggle(kaggle_path: str, output_dir: str) -> str:
     """
-    Lädt das Dataset per Kaggle-CLI und entpackt es mit 'unzip' (zuverlässiger!).
+    Loads dataset using Kaggle-CLI and unpacks with 'unzip'.
     """
     os.makedirs(output_dir, exist_ok=True)
     
-    # 1. Prüfen ob unzip installiert ist
+    # 1. Check if unzip is installed 
     try:
         subprocess.run(["unzip", "-v"], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("⚠️  'unzip' nicht gefunden! Installiere...")
+        print("'unzip' not found. Will install unzip...")
         subprocess.run(["sudo", "apt", "update"], check=True)
         subprocess.run(["sudo", "apt", "install", "-y", "unzip"], check=True)
-        print("✅ 'unzip' installiert")
-    
-    # 2. Alte ZIP löschen (falls korrupt)
+        print("...'unzip' was successfully installed")
+        print("")
+    # 2. Delete old zip if broken
     for f in os.listdir(output_dir):
         if f.endswith(".zip"):
             zip_path = os.path.join(output_dir, f)
-            print(f"🗑️  Lösche alte ZIP: {f}")
+            print(f"Delete old ZIP file: {f}")
             os.remove(zip_path)
             break
     
     # 3. Download
-    print(f"📥 Download von {kaggle_path} nach {output_dir}...")
+    print(f"Download from {kaggle_path} to {output_dir}...")
     subprocess.run([
         "kaggle", "datasets", "download", "-d", kaggle_path, "-p", output_dir
     ], check=True)
-    print("✅ Download abgeschlossen.")
+    print("...download finished")
+    print("")
 
-    # 4. ZIP finden
+    # 4. Find ZIP
     zip_file = None
     for f in os.listdir(output_dir):
         if f.endswith(".zip"):
             zip_file = os.path.join(output_dir, f)
             zip_size = os.path.getsize(zip_file) / (1024**3)
-            print(f"📦 ZIP gefunden: {f} ({zip_size:.2f} GB)")
+            print(f"ZIP  file found: {f} ({zip_size:.2f} GB)")
             break
             
     if not zip_file:
-        raise RuntimeError("Keine ZIP-Datei gefunden!")
+        raise RuntimeError("No ZIP file found")
 
-    # 5. Mit unzip entpacken (VIEL zuverlässiger als Python zipfile!)
-    print(f"📂 Entpacke mit 'unzip'...")
+    # 5. Extract using unzip
+    print("")
+    print(f"Extraction started...")
     result = subprocess.run(
         ["unzip", "-o", zip_file, "-d", output_dir],
         capture_output=True,
@@ -118,16 +120,17 @@ def load_from_kaggle(kaggle_path: str, output_dir: str) -> str:
     )
     
     if result.returncode != 0:
-        print(f"❌ Fehler beim Entpacken:")
+        print(f"Extraction failed:")
         print(result.stderr)
-        raise RuntimeError(f"Entpacken fehlgeschlagen: {result.stderr}")
+        raise RuntimeError(f"Extraction failed: {result.stderr}")
     
-    print("✅ Entpacken abgeschlossen")
+    print("...extraction finished")
+    print("")
 
     # 6. ZIP löschen
-    print(f"🗑️  Lösche ZIP-Archiv...")
+    print(f"Deleting ZIP...")
     os.remove(zip_file)
-    print("✅ Bereinigung beendet.")
+    print("All ZIP files were deleted")
     
     return output_dir
 

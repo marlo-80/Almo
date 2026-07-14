@@ -85,11 +85,11 @@ The entire process runs inside Docker and is orchestrated by Prefect. The main c
 
 ## System Requirements
 
-- **RAM:** 16 GB recommended (8 GB minimum for small datasets)
+- **RAM:** 32 GB recommended (16 GB minimum, close all applications)
 - **Disk Space:** 50 GB free (for raw data + PostgreSQL + models)
 - **CPU:** 4+ cores recommended (for dbt and training)
 - **Docker Engine:** 20.10+ and Docker Compose 2.0+
-- **OS:** Linux, macOS, or Windows 10/11 with WSL2
+- **OS:** Linux, macOS, or Windows 10/11 with WSL2 (macOS should work but it could not be tested.)
 
 
 
