@@ -38,11 +38,13 @@ Key Functions
 """
 
 import os
+import subprocess
 import re
 import sys
 import kagglehub
 import pandas as pd
 import shutil
+import zipfile
 import time
 from sqlalchemy import create_engine
 
@@ -55,83 +57,79 @@ DB_URI = "postgresql://testuser:testuser@postgres:5432/fastapi_db"
 
 
 
+# ./docker/src/data.py - NEUE VERSION mit unzip
+
+import os
+import subprocess
+import re
+import sys
+import pandas as pd
+import shutil
+import time
+
 def load_from_kaggle(kaggle_path: str, output_dir: str) -> str:
     """
-    Download the Kaggle dataset and copy CSV files to the output directory.
-
-    The function sets a custom cache directory to avoid filling the home
-    partition, increases the open-file limit to prevent errors during large
-    downloads, and retries up to 5 times with exponential backoff.
-
-    After downloading, both the custom cache and the temporary download folder
-    are deleted to free disk space.
-
-    Args:
-        kaggle_path (str): Kaggle dataset identifier
-                           (e.g., "robikscube/flight-delay-dataset-20182022").
-        output_dir (str): Local directory where CSV files will be copied.
-
-    Returns:
-        str: The output directory path (same as `output_dir`).
-
-    Raises:
-        RuntimeError: If download fails after 5 retry attempts.
+    Lädt das Dataset per Kaggle-CLI und entpackt es mit 'unzip' (zuverlässiger!).
     """
-
-    # 1. Move kaggle cache to project folder. Prevents full disc problems on system partitions
-    cache_dir = os.path.join(output_dir, ".kaggle_cache")
-    os.environ["KAGGLEHUB_CACHE"] = cache_dir
-    os.makedirs(cache_dir, exist_ok=True)
-    print(f"Cache directory: {cache_dir}")
-
-    # 2. Increase open file limit (prevents "Too many open files")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # 1. Prüfen ob unzip installiert ist
     try:
-        import resource
-        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-        new_soft = max(8192, soft)
-        resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
-        print(f"Rate limit increased from {soft} to {new_soft}")
-    except Exception as e:
-        print(f"Rate limit can't be increased any further: {e}")
+        subprocess.run(["unzip", "-v"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("⚠️  'unzip' nicht gefunden! Installiere...")
+        subprocess.run(["sudo", "apt", "update"], check=True)
+        subprocess.run(["sudo", "apt", "install", "-y", "unzip"], check=True)
+        print("✅ 'unzip' installiert")
+    
+    # 2. Alte ZIP löschen (falls korrupt)
+    for f in os.listdir(output_dir):
+        if f.endswith(".zip"):
+            zip_path = os.path.join(output_dir, f)
+            print(f"🗑️  Lösche alte ZIP: {f}")
+            os.remove(zip_path)
+            break
+    
+    # 3. Download
+    print(f"📥 Download von {kaggle_path} nach {output_dir}...")
+    subprocess.run([
+        "kaggle", "datasets", "download", "-d", kaggle_path, "-p", output_dir
+    ], check=True)
+    print("✅ Download abgeschlossen.")
 
-    # 3. Download with retries and progressive backoff
-    max_retries = 5
-    for attempt in range(1, max_retries + 1):
-        try:
-            print(f"Download attempts: {attempt}/{max_retries} …")
-            # No output_dir (compatible with kagglehub 0.3.10)
-            downloaded_path = kagglehub.dataset_download(kaggle_path)
-            print(f"Download saved to: {downloaded_path}")
+    # 4. ZIP finden
+    zip_file = None
+    for f in os.listdir(output_dir):
+        if f.endswith(".zip"):
+            zip_file = os.path.join(output_dir, f)
+            zip_size = os.path.getsize(zip_file) / (1024**3)
+            print(f"📦 ZIP gefunden: {f} ({zip_size:.2f} GB)")
+            break
+            
+    if not zip_file:
+        raise RuntimeError("Keine ZIP-Datei gefunden!")
 
-            # Copy CSV files to output_dir 
-            for file in os.listdir(downloaded_path):
-                if file.endswith(".csv"):
-                    src = os.path.join(downloaded_path, file)
-                    dst = os.path.join(output_dir, file)
-                    shutil.copy2(src, dst)
-                    print(f"Copied: {file}")
+    # 5. Mit unzip entpacken (VIEL zuverlässiger als Python zipfile!)
+    print(f"📂 Entpacke mit 'unzip'...")
+    result = subprocess.run(
+        ["unzip", "-o", zip_file, "-d", output_dir],
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode != 0:
+        print(f"❌ Fehler beim Entpacken:")
+        print(result.stderr)
+        raise RuntimeError(f"Entpacken fehlgeschlagen: {result.stderr}")
+    
+    print("✅ Entpacken abgeschlossen")
 
-            print("")
-            print("Cleaning up download folder...")
-            shutil.rmtree(cache_dir, ignore_errors=True)
-            shutil.rmtree(downloaded_path, ignore_errors=True)
-            print("...downloads deleted.")
-            print("")
-
-            return output_dir        
-
-        except Exception as e:
-            print(f"Error in attempt: {attempt}: {e}")
-            # Cleanup cache
-            shutil.rmtree(cache_dir, ignore_errors=True)
-            if attempt == max_retries:
-                raise RuntimeError("Download canceled after 5 tries.")
-            wait = 10 * attempt  # 10, 20, 30, 40 Sekunden
-            print(f"Wait {wait} seconds before next attempts...")
-            time.sleep(wait)
-
-    raise RuntimeError("Download failed.")
-
+    # 6. ZIP löschen
+    print(f"🗑️  Lösche ZIP-Archiv...")
+    os.remove(zip_file)
+    print("✅ Bereinigung beendet.")
+    
+    return output_dir
 
 
 

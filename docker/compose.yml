@@ -118,6 +118,7 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ../:/app
+      - ../flight_data:/app/flight_data
     depends_on:
       postgres:
         condition: service_healthy
@@ -239,10 +240,10 @@ services:
       postgres
       -c shared_buffers=2GB
       -c synchronous_commit=off
-      -c max_wal_size=4GB
-      -c checkpoint_timeout=15min
-      -c work_mem=64MB
-      -c maintenance_work_mem=1GB
+      -c max_wal_size=8GB
+      -c checkpoint_timeout=30min
+      -c work_mem=128MB
+      -c maintenance_work_mem=2GB
     ports:
       - "5432:5432"
     volumes:

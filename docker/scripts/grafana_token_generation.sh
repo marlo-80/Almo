@@ -69,10 +69,10 @@ TOKEN_FILE="/app/docker/monitoring/grafana/grafana_token.txt"
 # --------------------------------------------------------------------------
 
 # If token already exists, stop immediately
-if [ -f "$TOKEN_FILE" ]; then
-    echo "Token already present."
-    exit 0
-fi
+#if [ -f "$TOKEN_FILE" ]; then
+#    echo "Token already present."
+#    exit 0
+#fi
 
 echo "Generating Grafana token from host system..."
 

@@ -1,50 +1,45 @@
 {{
   config(
-    materialized = 'view'
+    materialized = 'table',
+    post_hook = [
+        "CHECKPOINT;",
+        "ANALYZE {{ this }};"
+    ]
   )
 }}
 
-WITH with_uid AS (
+WITH base_data AS (
     SELECT *,
         CONCAT(
             COALESCE("Origin", 'NA'), '_',
             COALESCE("Dest", 'NA'), '_',
-            TO_CHAR("FlightDate"::date, 'YYYYMMDD'), '_',
+            COALESCE("FlightDate"::text, '00000000'), '_',
             COALESCE("Operating_Airline", 'NA'), '_',
             COALESCE("CRSDepTime"::text, '0000')
-        ) AS flight_uid,
-        ROW_NUMBER() OVER (
-            PARTITION BY CONCAT(
-                COALESCE("Origin", 'NA'), '_',
-                COALESCE("Dest", 'NA'), '_',
-                TO_CHAR("FlightDate"::date, 'YYYYMMDD'), '_',
-                COALESCE("Operating_Airline", 'NA'), '_',
-                COALESCE("CRSDepTime"::text, '0000')
-            )
-            ORDER BY "Marketing_Airline_Network"
-        ) AS rn
+        ) AS generated_flight_uid
     FROM {{ source('raw', 'flights') }}
     WHERE "Cancelled" IS FALSE
       AND "Diverted" IS FALSE
       AND "FlightDate" IS NOT NULL
-      AND "Year" IS NOT NULL                      
-      AND "Quarter" IS NOT NULL                        
-      AND "Month" IS NOT NULL                           
-      AND "DayofMonth" IS NOT NULL                        
-      AND "DayOfWeek" IS NOT NULL                        
-      AND "CRSDepTime" IS NOT NULL
-      AND "CRSArrTime" IS NOT NULL
-      AND "CRSElapsedTime" IS NOT NULL
       AND "Origin" IS NOT NULL
       AND "Dest" IS NOT NULL
-      AND "Distance" > 0
       AND "ArrDelay" IS NOT NULL
       AND "ArrDelayMinutes" IS NOT NULL
       AND "ArrDel15" IS NOT NULL
-      AND "ArrivalDelayGroups" IS NOT NULL
+      AND "Distance" > 0
+),
+
+with_uid AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY generated_flight_uid
+            ORDER BY "Marketing_Airline_Network"
+        ) AS rn
+    FROM base_data
 )
+
 SELECT
-    flight_uid,
+    generated_flight_uid                AS flight_uid,
     "FlightDate"::date                  AS flight_date,
     "Year"                              AS year,
     "Quarter"                           AS quarter,

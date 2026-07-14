@@ -55,9 +55,6 @@ import pandas as pd
 import psycopg2
 from sqlalchemy import create_engine, text
 
-import gc
-
-
 # --------------------------------------------------------------------------
 # CONFIGURATION
 # --------------------------------------------------------------------------
@@ -107,8 +104,7 @@ def ensure_data_downloaded():
         raise RuntimeError("ZIP-Datei nicht gefunden.")
 
     print(f"📂 Entpacke {zip_file}...")
-    #subprocess.run(["unzip", "-o", zip_file, "-d", DATA_DIR], check=True)
-    subprocess.run(["unzip", "-o", zip_file, "*.csv", "-x", "*/*", "-d", DATA_DIR], check=True)
+    subprocess.run(["unzip", "-o", zip_file, "-d", DATA_DIR], check=True)
     os.remove(zip_file)
     print("✅ Daten bereit.")
 
@@ -273,10 +269,10 @@ def import_csv_to_db() -> int:
 # --------------------------------------------------------------------------
 # GRAFANA TOKEN GENERATION
 # --------------------------------------------------------------------------
-def grafana_token_generation():
+def generate_grafana_token():
     """Generiert den Grafana API-Token (einmalig)."""
     print("Generating Grafana API token...")
-    token_script = "/app/docker/scripts/grafana_token_generation.sh"
+    token_script = "/app/docker/scripts/generate_grafana_token.sh"
     if os.path.exists(token_script):
         try:
             result = subprocess.run(
@@ -347,7 +343,7 @@ def bootstrap():
         print("✅ Index auf FlightDate erstellt.")
 
         # 5. Grafana-Token generieren
-        grafana_token_generation()
+        generate_grafana_token()
 
     # 6. CSV-Dateien löschen
     csv_files = glob.glob(os.path.join("./flight_data", "*.csv"))
@@ -357,42 +353,9 @@ def bootstrap():
             print(f"🗑️  Gelöscht: {f}")
         except Exception as e:
             print(f"⚠️ Konnte {f} nicht löschen: {e}")
-            
-            
-            
-
-
-
-    # --------------------------------------------------------------------------
-    # FINAL CLEANUP: CHECKPOINT + VACUUM ANALYZE
-    # --------------------------------------------------------------------------
-    if total_rows > 0:
-        print("🔄 Running CHECKPOINT to flush WAL to disk...")
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            conn.execute(text('CHECKPOINT;'))
-        print("✅ CHECKPOINT completed.")
-
-        print("🔄 Running VACUUM ANALYZE to free space and update statistics...")
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            conn.execute(text('VACUUM ANALYZE raw.flights;'))
-        print("✅ VACUUM ANALYZE completed.")
-        
-        # Zuerst große Python-Objekte im RAM freigeben (falls du Variablen wie 'df' hast, hier vorher 'del df' aufrufen!)
-        gc.collect() 
-        print("✅ Python Garbage Collection completed.")
-        
-        print("⏳ Warte 45 Sekunden, damit die Festplatten-I/O abklingt...")
-        time.sleep(45)
-        
-        print("🧹 Zwinge WSL2, den Datei-Cache im RAM zu leeren...")
-        # Nutzt sh -c, um die Pipe korrekt an den Linux-Kernel zu übergeben
-        os.system("sudo sync && sync && echo 3 | sudo tee /proc/sys/vm/drop_caches")
-        print("✅ WSL2 Cache cleared.")
-        
-    else:
-        print("No data imported – skipping cleanup.")
 
     print(f"✅ Bootstrap abgeschlossen. {total_rows} Zeilen in raw.flights.")
+
 
 if __name__ == "__main__":
     bootstrap()
