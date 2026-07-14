@@ -19,7 +19,7 @@ WITH pre_sorted_sample AS (
     FROM {{ ref('stg_flights') }}
     WHERE flight_date >= '2020-01-01'
       AND flight_date <  '2022-12-31'
-      AND ABS(hashtext(flight_uid) % 1000) < 4  -- ~0.4% Sample
+      AND ABS(hashtext(flight_uid) % 1000) < 10  -- ~0.4% Sample
     ORDER BY flight_date
     LIMIT 100000
 )
